@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+    <title>VIPER RUSH 3D</title>
+    <style>
+        body { user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; touch-action: none; -webkit-tap-highlight-color: transparent; }
+        #ui { 
+            position: absolute;
+            top: 8px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #00d4ff;
+            pointer-events: none;
+            z-index: 50;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            white-space: nowrap;
+        }
+        #score-row {
+            display: flex;
+            align-items: baseline;
+            gap: 16px;
+            line-height: 1;
+            letter-spacing: 0.02em;
+            text-shadow: 0 0 14px rgba(0, 212, 255, 0.95), 0 0 28px rgba(0, 212, 255, 0.45);
+        }
+        #score-label {
+            font-size: 44px;
+            font-weight: 700;
+            opacity: 0.92;
+        }
+        #score {
+            font-size: 130px;
+            font-weight: 900;
+        }
+        #score-multiplier {
+            font-size: 44px;
+            font-weight: 700;
+            color: #39ff14;
+            text-shadow: 0 0 10px rgba(57, 255, 20, 0.75);
+            opacity: 0.95;
+        }
+        #head-counter {
+            font-size: 42px;
+            font-weight: 700;
+            color: #ffde59;
+            text-shadow: 0 0 10px rgba(255, 222, 89, 0.75);
+            opacity: 0.96;
+        }
+        #game-timer {
+            font-size: 42px;
+            font-weight: 800;
+            color: #ffde59;
+            text-shadow: 0 0 10px rgba(255, 222, 89, 0.75);
+            font-variant-numeric: tabular-nums;
+            letter-spacing: 0.06em;
+        }
+        #overlay { 
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+            background: rgba(0,0,0,0.85); display: flex; flex-direction: column; 
+            align-items: center; justify-content: center; color: white; z-index: 100; 
+            transition: 0.5s; 
+        }
+        h1 { 
+            font-size: 70px; margin: 0; 
+            background: linear-gradient(#fff, #00d4ff); 
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; 
+        }
+        #menu {
+            margin-top: 70px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            min-width: 420px;
+            align-items: center;
+        }
+        .menu-item {
+            width: 100%;
+            border: 2px solid rgba(0, 212, 255, 0.55);
+            border-radius: 10px;
+            padding: 12px 18px;
+            font-size: 24px;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: #9de9ff;
+            background: rgba(0, 16, 28, 0.7);
+            text-align: center;
+            text-shadow: 0 0 10px rgba(0, 212, 255, 0.45);
+        }
+        .menu-item.active {
+            border-color: #39ff14;
+            color: #39ff14;
+            box-shadow: 0 0 18px rgba(57, 255, 20, 0.45);
+            background: rgba(18, 42, 18, 0.7);
+        }
+        #menu-hint {
+            margin-top: 8px;
+            font-size: 15px;
+            letter-spacing: 0.04em;
+            color: #8ab2c0;
+            text-transform: uppercase;
+        }
+        #touch-controls {
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: max(14px, env(safe-area-inset-bottom));
+            display: flex;
+            justify-content: space-between;
+            pointer-events: none;
+            z-index: 260;
+            padding: 0 14px;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        #touch-controls.inactive { opacity: 0.001; pointer-events: none; }
+        .touch-pad {
+            width: 344px;
+            height: 344px;
+            border-radius: 50%;
+            border: 2px solid rgba(0, 212, 255, 0.275);
+            background: radial-gradient(circle at 50% 50%, rgba(0, 212, 255, 0.07), rgba(0, 12, 20, 0.36));
+            box-shadow: 0 0 20px rgba(0, 212, 255, 0.11);
+            position: relative;
+            pointer-events: auto;
+            touch-action: none;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        #touch-left-pad::before {
+            content: "";
+            position: absolute;
+            top: 8px;
+            bottom: 8px;
+            left: 50%;
+            width: 2px;
+            transform: translateX(-50%);
+            background: rgba(0, 212, 255, 0.25);
+            border-radius: 2px;
+        }
+        #touch-right-pad::before {
+            content: "";
+            position: absolute;
+            left: 8px;
+            right: 8px;
+            top: 50%;
+            height: 2px;
+            transform: translateY(-50%);
+            background: rgba(0, 212, 255, 0.25);
+            border-radius: 2px;
+        }
+        .touch-pad .hint {
+            position: absolute;
+            color: rgba(180, 235, 255, 0.44);
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            text-shadow: 0 0 8px rgba(0, 212, 255, 0.175);
+            pointer-events: none;
+        }
+        #touch-left-pad .hint-left { left: 22px; top: 50%; transform: translateY(-50%); }
+        #touch-left-pad .hint-right { right: 18px; top: 50%; transform: translateY(-50%); }
+        #touch-right-pad .hint-up { top: 22px; left: 50%; transform: translateX(-50%); font-size: 11px; }
+        #touch-right-pad .hint-down { bottom: 22px; left: 50%; transform: translateX(-50%); font-size: 11px; }
+        @media (max-width: 900px), (pointer: coarse) {
+            #ui { top: 6px; gap: 3px; }
+            #score-row { gap: 8px; }
+            #score-label { font-size: 13px; }
+            #score { font-size: 39px; } /* ~30% of desktop 130px */
+            #score-multiplier { font-size: 14px; }
+            #head-counter { font-size: 13px; }
+            #game-timer { font-size: 14px; letter-spacing: 0.02em; }
+            h1 { font-size: 35px; }
+            #final-score { margin-top: 10px; font-size: 49px; }
+            #final-breakdown, #high-score { margin-top: 4px; font-size: 12px; }
+            #menu { margin-top: 35px; gap: 7px; min-width: 210px; }
+            .menu-item { padding: 6px 9px; font-size: 12px; }
+            #menu-hint { margin-top: 4px; font-size: 8px; }
+            #touch-controls { padding: 0 8px; bottom: max(8px, env(safe-area-inset-bottom)); }
+            .touch-pad { width: 286px; height: 286px; }
+        }
+        .hidden { opacity: 0; pointer-events: none; }
+        #pointer-hint {
+            position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
+            color: #888; font-size: 14px; font-family: 'Segoe UI', sans-serif;
+            pointer-events: none; z-index: 60; white-space: nowrap;
+        }
+        #timechill-bar {
+            position: absolute;
+            left: 50%;
+            bottom: 14px;
+            transform: translateX(-50%);
+            width: min(420px, calc(100vw - 28px));
+            height: 12px;
+            border: 1px solid rgba(0, 212, 255, 0.7);
+            border-radius: 999px;
+            background: rgba(0, 12, 20, 0.8);
+            box-shadow: 0 0 16px rgba(0, 212, 255, 0.28);
+            opacity: 1;
+            transition: opacity 0.22s;
+            pointer-events: none;
+            z-index: 70;
+            overflow: hidden;
+        }
+        #timechill-bar.hidden {
+            opacity: 0;
+            visibility: hidden;
+        }
+        #timechill-fill {
+            width: 100%;
+            height: 100%;
+            border-radius: inherit;
+            background: linear-gradient(90deg, #00d4ff, #39ff14);
+            transform-origin: left center;
+            transform: scaleX(1);
+            transition: transform 0.08s linear;
+            box-shadow: inset 0 0 10px rgba(255, 255, 255, 0.18);
+        }
+#final-score {
+            margin-top: 20px;
+            font-size: 98px;
+            font-weight: 900;
+            line-height: 1;
+            color: #00d4ff;
+            text-shadow: 0 0 14px rgba(0, 212, 255, 0.95), 0 0 32px rgba(0, 212, 255, 0.55);
+            font-variant-numeric: tabular-nums;
+            letter-spacing: 0.02em;
+        }
+        #final-breakdown, #high-score {
+            margin-top: 8px;
+            font-size: 24px;
+            color: #d7f9ff;
+            text-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
+            font-variant-numeric: tabular-nums;
+        }
+        #final-score.hidden, #final-breakdown.hidden, #high-score.hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <div id="score-row">
+            <span id="score-label">Score:</span>
+            <span id="score">0</span>
+            <span id="score-multiplier">x1</span>
+            <span id="head-counter">Heads: 1</span>
+        </div>
+        <div id="game-timer">02:00</div>
+    </div>
+    <div id="timechill-bar" class="hidden" aria-hidden="true">
+        <div id="timechill-fill"></div>
+    </div>
+<div id="overlay">
+        <h1 id="status">VIPER RUSH</h1>
+        <div id="final-score" class="hidden"></div>
+        <div id="final-breakdown" class="hidden"></div>
+        <div id="high-score" class="hidden"></div>
+        <div id="menu">
+            <div class="menu-item hidden" data-menu-action="pause" id="menu-item-pause">Pause</div>
+            <div class="menu-item active" data-menu-action="restart" id="menu-item-restart">Start Run</div>
+            <div class="menu-item" data-menu-action="sfx" id="menu-item-sfx">SFX: ON</div>
+            <div class="menu-item" data-menu-action="sensitivity" id="menu-item-sensitivity">Mouse Sensitivity: 0.0022</div>
+        </div>
+        <div id="menu-hint">Space pauses/resumes | Move mouse up/down to navigate | Left/right click to select/adjust</div>
+    </div>
+    <div id="touch-controls" class="inactive" aria-hidden="true">
+        <div id="touch-left-pad" class="touch-pad">
+            <span class="hint hint-left">Left</span>
+            <span class="hint hint-right">Right</span>
+        </div>
+        <div id="touch-right-pad" class="touch-pad">
+            <span class="hint hint-up">Boost</span>
+            <span class="hint hint-down">Chill</span>
+        </div>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module" src="./src/main.js"></script>
+</body>
+</html>
+
+
+
+
+
