@@ -10,6 +10,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { createInputController } from './input-controller.js';
 import { SubtleBoostMotionBlurShader } from './shaders.js';
 import { createSfx } from './sfx.js';
+import { createLiquidGlassPill } from './liquidglass.js';
 
 // ---------------------------------------------------------------------------
 // Config — tweak gameplay and visuals here
@@ -69,7 +70,7 @@ const FOOD_ARROW_COLOR = 0xff2a2a;
 const FOOD_ARROW_EMISSIVE_INTENSITY = 2.7;
 const FOOD_ARROW_LENGTH = 0.9;
 const FOOD_ARROW_WIDTH = 0.22;
-const FOOD_ARROW_CAMERA_OFFSET = new THREE.Vector3(0, -2.55, -5.8);
+const FOOD_ARROW_CAMERA_OFFSET = new THREE.Vector3(0, 3, -5.8);
 
 const INITIAL_BODY_SEGMENTS = 12;
 const BODY_SEGMENT_SPACING = 2.5;
@@ -1754,7 +1755,27 @@ function updateFoodVisuals(elapsedSeconds, delta) {
     food.rotation.x += FOOD_SPIN_X_SPEED * delta;
 }
 
+function setupUiLiquidGlass() {
+    const ui = document.getElementById('ui');
+    const scoreRow = document.getElementById('score-row');
+    const timer = document.getElementById('game-timer');
+    if (!ui || !scoreRow || !timer) return;
+    const { element } = createLiquidGlassPill({
+        className: 'ui-liquid-glass-pill',
+        children: [scoreRow, timer],
+        glassThickness: 145,
+        refractiveIndex: 1.62,
+        refractionScale: 1.88,
+        specularOpacity: 0.68,
+        blur: 1.62,
+        fallbackBlurPx: 24,
+        bezelWidth: 15,
+    });
+    ui.appendChild(element);
+}
+
 function init() {
+    setupUiLiquidGlass();
     sfx = createSfx();
     scene = new THREE.Scene();
     scene.background = new THREE.Color(SCENE_BACKGROUND);

@@ -8,7 +8,8 @@
         body { user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; touch-action: none; -webkit-tap-highlight-color: transparent; }
         #ui { 
             position: absolute;
-            top: 8px;
+            bottom: max(10px, env(safe-area-inset-bottom));
+            top: auto;
             left: 50%;
             transform: translateX(-50%);
             color: #00d4ff;
@@ -19,6 +20,48 @@
             align-items: center;
             gap: 6px;
             white-space: nowrap;
+        }
+        .liquid-glass-pill__svg-defs {
+            position: absolute;
+            width: 0;
+            height: 0;
+            overflow: hidden;
+        }
+        /* Capsule ends: corner radius = half outer height — large vertical padding + min-height make the arcs read bigger. */
+        #ui .liquid-glass-pill.ui-liquid-glass-pill {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            box-sizing: border-box;
+            padding: 52px 96px 56px;
+            min-height: 220px;
+            min-width: min(96vw, 640px);
+            border-radius: 9999px;
+            border: 1px solid rgba(0, 212, 255, 0.42);
+            box-shadow:
+                0 0 0 1px rgba(255, 255, 255, 0.06) inset,
+                0 12px 44px rgba(0, 0, 0, 0.55),
+                0 0 40px rgba(0, 212, 255, 0.12);
+            isolation: isolate;
+            pointer-events: none;
+        }
+        #ui .liquid-glass-content {
+            display: inline-flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            position: relative;
+            z-index: 1;
+        }
+        .liquid-glass-pill--fallback .liquid-glass-pill__glass {
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            pointer-events: none;
+            z-index: 0;
+            backdrop-filter: blur(var(--liquid-fallback-blur, 14px));
+            -webkit-backdrop-filter: blur(var(--liquid-fallback-blur, 14px));
         }
         #score-row {
             display: flex;
@@ -176,7 +219,13 @@
         #touch-right-pad .hint-up { top: 22px; left: 50%; transform: translateX(-50%); font-size: 11px; }
         #touch-right-pad .hint-down { bottom: 22px; left: 50%; transform: translateX(-50%); font-size: 11px; }
         @media (max-width: 900px), (pointer: coarse) {
-            #ui { top: 6px; gap: 3px; }
+            /* Keep HUD above corner touch pads (they overlap the bottom center on narrow viewports). */
+            #ui { bottom: max(300px, calc(env(safe-area-inset-bottom) + 280px)); gap: 3px; }
+            #ui .liquid-glass-pill.ui-liquid-glass-pill {
+                padding: 22px 18px 26px;
+                min-height: 132px;
+                min-width: min(94vw, 100%);
+            }
             #score-row { gap: 8px; }
             #score-label { font-size: 13px; }
             #score { font-size: 39px; } /* ~30% of desktop 130px */
@@ -191,17 +240,18 @@
             #menu-hint { margin-top: 4px; font-size: 8px; }
             #touch-controls { padding: 0 8px; bottom: max(8px, env(safe-area-inset-bottom)); }
             .touch-pad { width: 286px; height: 286px; }
+            #timechill-bar { top: max(420px, calc(env(safe-area-inset-top) + 400px)); }
         }
         .hidden { opacity: 0; pointer-events: none; }
         #pointer-hint {
-            position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
+            position: absolute; top: 24px; bottom: auto; left: 50%; transform: translateX(-50%);
             color: #888; font-size: 14px; font-family: 'Segoe UI', sans-serif;
             pointer-events: none; z-index: 60; white-space: nowrap;
         }
         #timechill-bar {
             position: absolute;
             left: 50%;
-            bottom: 14px;
+            top: max(120px, calc(env(safe-area-inset-top) + 110px));
             transform: translateX(-50%);
             width: min(420px, calc(100vw - 28px));
             height: 12px;
