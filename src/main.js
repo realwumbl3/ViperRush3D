@@ -50,19 +50,21 @@ const FLOOR_COLOR = 0x000000;
 
 const SNAKE_SURFACE_Y = 0.6;
 
-const HEAD_CAPSULE_RADIUS = 0.5;
-const HEAD_CAPSULE_LENGTH = 1.2;
-const HEAD_CAPSULE_CAP_SEGMENTS = 4;
-const HEAD_CAPSULE_RADIAL_SEGMENTS = 16;
-const HEAD_COLOR = 0x39ff14;
+const HEAD_COLOR = 0x27ae60;
 const HEAD_EMISSIVE_INTENSITY = 2.5;
+const HEAD_EYE_COLOR = 0xff2a2a;
 
-const FOOD_SPHERE_RADIUS = 0.5;
-const FOOD_SPHERE_WIDTH_SEGMENTS = 20;
-const FOOD_SPHERE_HEIGHT_SEGMENTS = 20;
+const FOOD_ICOSAHEDRON_RADIUS = 0.5;
+const FOOD_ICOSAHEDRON_DETAIL = 0;
 const FOOD_COLOR = 0xff3131;
 const FOOD_EMISSIVE_INTENSITY = 3;
 const FOOD_SPAWN_RANGE_SCALE = 1.6;
+const FOOD_FLOAT_BASE_Y = 0.78;
+const FOOD_BOB_AMPLITUDE = 0.16;
+const FOOD_BOB_SPEED = 2.8;
+const FOOD_SPIN_Y_SPEED = 2.2;
+const FOOD_SPIN_X_SPEED = 0.7;
+const FOOD_EAT_BURST_COUNT = 48;
 const FOOD_ARROW_COLOR = 0xff2a2a;
 const FOOD_ARROW_EMISSIVE_INTENSITY = 2.7;
 const FOOD_ARROW_LENGTH = 0.9;
@@ -84,6 +86,7 @@ const BODY_ROUND_SEGMENTS = 3;
 const BODY_ROUND_RADIUS = 0.14;
 const BODY_COLOR = 0x27ae60;
 const BODY_EMISSIVE_INTENSITY = 1.2;
+const MIN_FOOD_DISTANCE_FROM_BODY = 3.35;
 
 const MIN_FOOD_DISTANCE_FROM_HEAD = 30;
 
@@ -120,6 +123,7 @@ const EAT_DISTANCE = 1.2;
 const SCORE_PER_FOOD = 10;
 const HEAD_END_BONUS = 100;
 const GAME_DURATION_SECONDS = 120;
+const GAME_END_RESTART_COOLDOWN_MS = 3000;
 const STORAGE_KEY_HIGH_SCORE = 'neonDrift_highScore';
 
 const SELF_COLLISION_START_INDEX = 3;
@@ -129,11 +133,23 @@ const SELF_HIT_IMMUNITY_DURATION = 1.0;
 const SELF_HIT_PULSE_HZ = 9;
 const SELF_HIT_PULSE_MIN = 0.45;
 const SELF_HIT_PULSE_MAX = 1.9;
+const SELF_HIT_TAIL_EXPLODE_STAGGER = 0.055;
 
 const CAMERA_OFFSET_X = 0;
 const CAMERA_OFFSET_Y = 6;
 const CAMERA_OFFSET_Z = 14;
 const CAMERA_FOLLOW_LERP = 0.12;
+const MENU_IDLE_ORBIT_RADIUS = 18;
+const MENU_IDLE_ORBIT_HEIGHT = 7.5;
+const MENU_IDLE_ORBIT_SPEED = 0.26;
+const MENU_DEMO_SPEED = 8.6;
+const MENU_DEMO_BOOST_SPEED = 12.8;
+const MENU_DEMO_BOOST_DOT = 0.96;
+const MENU_DEMO_TURN_SPEED = 2.3;
+const MENU_DEMO_INITIAL_SEGMENTS = 8;
+const MENU_DEMO_MAX_SEGMENTS = 22;
+const MENU_DEMO_WALL_MARGIN = 9.5;
+const MENU_DEMO_BODY_AVOID_RADIUS = 6.5;
 
 const CRASH_ANIM_DURATION = 2.85;
 const CRASH_PARTICLE_COUNT = 1400;
@@ -171,6 +187,7 @@ let motionBlurPass;
 let boostMotionBlurAmt = 0;
 let wallEdgeMaterial;
 let snakeHead, food, floor, foodArrow;
+let snakeHeadCore = null;
 let score = 0;
 let gameActive = false;
 let snakeSegments = [];
@@ -206,13 +223,22 @@ const _headPulseColor = new THREE.Color(HEAD_COLOR);
 const _foodArrowWorldPos = new THREE.Vector3();
 const _foodArrowToFood = new THREE.Vector3();
 const _foodArrowForward = new THREE.Vector3(0, 0, 1);
-const menuActions = ['pause', 'restart', 'sfx', 'sensitivity'];
+const _foodEatBurstPos = new THREE.Vector3();
+const _foodSpawnCandidate = new THREE.Vector3();
+const MENU_SCREEN_MAIN = 'main';
+const MENU_SCREEN_SETTINGS = 'settings';
+const menuActions = ['pause', 'restart', 'settings', 'sfx', 'sensitivity', 'back'];
 let menuIndex = 1;
+let menuScreen = MENU_SCREEN_MAIN;
 let menuMouseMoveCarry = 0;
 let sfx = null;
 let fullscreenRequestedOnce = false;
 let fullscreenAttemptInFlight = false;
 let gamePaused = false;
+let restartCooldownUntilMs = 0;
+let restartCooldownLastShownSec = -1;
+let hasStartedRunOnce = false;
+const tailExplosionQueue = [];
 
 function isGameplayActive() {
     return gameActive && !gamePaused;
@@ -222,15 +248,167 @@ function isMenuOpen() {
     return gamePaused || (!gameActive && !crashAnimating);
 }
 
+function shouldOrbitMenuCamera() {
+    return !hasStartedRunOnce && !gameActive && !gamePaused && !crashAnimating;
+}
+
+function normalizeAngleRad(a) {
+    let x = a;
+    while (x > Math.PI) x -= Math.PI * 2;
+    while (x < -Math.PI) x += Math.PI * 2;
+    return x;
+}
+
+function setSnakePoseForTrail() {
+    const headFwd = DIR_FORWARD.clone().applyAxisAngle(DIR_WORLD_UP, currentRotationY);
+    for (let i = 0; i < snakeSegments.length; i++) {
+        const offset = (i + 1) * BODY_SEGMENT_SPACING;
+        snakeSegments[i].position.copy(
+            snakeHead.position.clone().addScaledVector(headFwd, -offset)
+        );
+    }
+    positionHistory = [snakeHead.position.clone()];
+    for (let i = 0; i < snakeSegments.length; i++) {
+        placeBodySegmentAlongTrail(i, snakeSegments[i]);
+    }
+}
+
+function clearSnakeSegments() {
+    for (let i = 0; i < snakeSegments.length; i++) {
+        const seg = snakeSegments[i];
+        scene.remove(seg);
+        if (seg.geometry) seg.geometry.dispose();
+        if (seg.material) seg.material.dispose();
+    }
+    snakeSegments = [];
+}
+
+function resetMenuDemoSnake() {
+    if (!snakeHead) return;
+    snakeHead.visible = true;
+    snakeHead.position.set(0, SNAKE_SURFACE_Y, 0);
+    currentRotationY = Math.random() * Math.PI * 2;
+    clearSnakeSegments();
+    positionHistory = [];
+    for (let i = 0; i < MENU_DEMO_INITIAL_SEGMENTS; i++) addSegment();
+    setSnakePoseForTrail();
+    spawnFood();
+}
+
+function updateMenuDemoAutoplay(delta) {
+    if (!snakeHead || !food) return;
+
+    const headPos = snakeHead.position;
+    const heading = DIR_FORWARD.clone().applyAxisAngle(DIR_WORLD_UP, currentRotationY);
+
+    const toFood = food.position.clone().sub(headPos);
+    toFood.y = 0;
+    if (toFood.lengthSq() < 1e-8) toFood.copy(heading);
+    else toFood.normalize();
+
+    const avoid = new THREE.Vector3();
+    const wallBand = MENU_DEMO_WALL_MARGIN;
+    const wallScale = 1 / wallBand;
+    if (headPos.x > WORLD_SIZE - wallBand) avoid.x -= (headPos.x - (WORLD_SIZE - wallBand)) * wallScale;
+    if (headPos.x < -WORLD_SIZE + wallBand) avoid.x += ((-WORLD_SIZE + wallBand) - headPos.x) * wallScale;
+    if (headPos.z > WORLD_SIZE - wallBand) avoid.z -= (headPos.z - (WORLD_SIZE - wallBand)) * wallScale;
+    if (headPos.z < -WORLD_SIZE + wallBand) avoid.z += ((-WORLD_SIZE + wallBand) - headPos.z) * wallScale;
+
+    const bodyAvoidR = MENU_DEMO_BODY_AVOID_RADIUS;
+    const bodyAvoidR2 = bodyAvoidR * bodyAvoidR;
+    for (let i = 2; i < snakeSegments.length; i++) {
+        const away = headPos.clone().sub(snakeSegments[i].position);
+        away.y = 0;
+        const d2 = away.lengthSq();
+        if (d2 < 1e-6 || d2 > bodyAvoidR2) continue;
+        const d = Math.sqrt(d2);
+        const w = (bodyAvoidR - d) / bodyAvoidR;
+        avoid.addScaledVector(away.multiplyScalar(1 / d), w * 1.6);
+    }
+
+    const steer = heading.clone().multiplyScalar(0.35)
+        .addScaledVector(toFood, 1.15)
+        .addScaledVector(avoid, 1.9);
+    steer.y = 0;
+    if (steer.lengthSq() < 1e-8) steer.copy(heading);
+    else steer.normalize();
+
+    const desiredYaw = Math.atan2(-steer.x, -steer.z);
+    const dyaw = normalizeAngleRad(desiredYaw - currentRotationY);
+    const maxTurn = MENU_DEMO_TURN_SPEED * delta;
+    currentRotationY += THREE.MathUtils.clamp(dyaw, -maxTurn, maxTurn);
+
+    const moveDir = DIR_FORWARD.clone().applyAxisAngle(DIR_WORLD_UP, currentRotationY);
+    const alignDot = moveDir.dot(toFood);
+    const avoidancePressure = avoid.lengthSq();
+    const demoSpeed = (alignDot >= MENU_DEMO_BOOST_DOT && avoidancePressure < 0.18)
+        ? MENU_DEMO_BOOST_SPEED
+        : MENU_DEMO_SPEED;
+    snakeHead.position.addScaledVector(moveDir, demoSpeed * delta);
+    snakeHead.rotation.y = currentRotationY;
+
+    const hp = snakeHead.position.clone();
+    if (positionHistory.length > 0 && positionHistory[0].distanceToSquared(hp) < 1e-14) positionHistory[0].copy(hp);
+    else positionHistory.unshift(hp);
+    trimHistoryTail();
+    for (let i = 0; i < snakeSegments.length; i++) placeBodySegmentAlongTrail(i, snakeSegments[i]);
+
+    if (headPos.distanceTo(food.position) < EAT_DISTANCE) {
+        food.getWorldPosition(_foodEatBurstPos);
+        spawnFoodBurst(_foodEatBurstPos);
+        addSegment();
+        if (snakeSegments.length > MENU_DEMO_MAX_SEGMENTS) {
+            const tail = snakeSegments.pop();
+            if (tail) {
+                scene.remove(tail);
+                if (tail.geometry) tail.geometry.dispose();
+                if (tail.material) tail.material.dispose();
+            }
+        }
+        spawnFood();
+    }
+
+    if (Math.abs(headPos.x) > WORLD_SIZE || Math.abs(headPos.z) > WORLD_SIZE) {
+        resetMenuDemoSnake();
+        return;
+    }
+    for (let i = SELF_COLLISION_START_INDEX; i < snakeSegments.length; i++) {
+        if (headPos.distanceTo(snakeSegments[i].position) < SELF_COLLISION_DISTANCE) {
+            resetMenuDemoSnake();
+            return;
+        }
+    }
+}
+
+function getRestartCooldownRemainingMs() {
+    if (gameActive || crashAnimating) return 0;
+    return Math.max(0, restartCooldownUntilMs - performance.now());
+}
+
+function isRestartOnCooldown() {
+    return getRestartCooldownRemainingMs() > 0;
+}
+
+function getDefaultMainMenuAction() {
+    return gameActive ? 'pause' : 'restart';
+}
+
+function setMenuScreen(screen) {
+    menuScreen = screen;
+    menuMouseMoveCarry = 0;
+}
+
 function getVisibleMenuActions() {
-    return gameActive ? menuActions : ['restart', 'sfx', 'sensitivity'];
+    if (menuScreen === MENU_SCREEN_SETTINGS) return ['sfx', 'sensitivity', 'back'];
+    return gameActive ? ['pause', 'restart', 'settings'] : ['restart', 'settings'];
 }
 
 function normalizeMenuIndex() {
     const visible = getVisibleMenuActions();
     const currentAction = menuActions[menuIndex];
     if (visible.indexOf(currentAction) >= 0) return;
-    menuIndex = menuActions.indexOf('restart');
+    const fallbackAction = menuScreen === MENU_SCREEN_SETTINGS ? 'sfx' : getDefaultMainMenuAction();
+    menuIndex = menuActions.indexOf(fallbackAction);
 }
 
 function isMobilePhoneLike() {
@@ -535,6 +713,62 @@ function spawnSnakeBurst(worldPos, colorHex) {
     const mesh = new THREE.Points(geo, mat);
     scene.add(mesh);
     crashSnakeBursts.push({ mesh, vel, count, life: 1 });
+}
+
+function spawnFoodBurst(worldPos) {
+    const count = FOOD_EAT_BURST_COUNT;
+    const pos = new Float32Array(count * 3);
+    const vel = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+        pos[i * 3] = worldPos.x + (Math.random() - 0.5) * 0.3;
+        pos[i * 3 + 1] = worldPos.y + (Math.random() - 0.5) * 0.3;
+        pos[i * 3 + 2] = worldPos.z + (Math.random() - 0.5) * 0.3;
+        const s = 6 + Math.random() * 10;
+        vel[i * 3] = (Math.random() - 0.5) * s;
+        vel[i * 3 + 1] = 3 + Math.random() * 8;
+        vel[i * 3 + 2] = (Math.random() - 0.5) * s;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const mat = new THREE.PointsMaterial({
+        color: FOOD_COLOR,
+        size: 0.1,
+        transparent: true,
+        opacity: 0.98,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        sizeAttenuation: true
+    });
+    const mesh = new THREE.Points(geo, mat);
+    scene.add(mesh);
+    crashSnakeBursts.push({ mesh, vel, count, life: 0.85 });
+}
+
+function queueTailExplosionTrail(worldPositions, colorHex = BODY_COLOR) {
+    if (!worldPositions || worldPositions.length === 0) return;
+    for (let i = 0; i < worldPositions.length; i++) {
+        const pos = worldPositions[i];
+        if (!pos) continue;
+        tailExplosionQueue.push({
+            worldPos: pos.clone(),
+            colorHex,
+            wait: tailExplosionQueue.length === 0 ? 0 : SELF_HIT_TAIL_EXPLODE_STAGGER
+        });
+    }
+}
+
+function updateTailExplosionTrail(delta) {
+    let remaining = delta;
+    while (remaining > 0 && tailExplosionQueue.length > 0) {
+        const next = tailExplosionQueue[0];
+        if (next.wait > remaining) {
+            next.wait -= remaining;
+            break;
+        }
+        remaining -= next.wait;
+        tailExplosionQueue.shift();
+        spawnSnakeBurst(next.worldPos, next.colorHex);
+    }
 }
 
 function updateSnakeBursts(delta) {
@@ -927,13 +1161,17 @@ function finishWallCrash() {
 
 function removeTailSegments(count) {
     const n = Math.max(0, Math.min(count, snakeSegments.length));
+    const removedWorldPositions = [];
     for (let i = 0; i < n; i++) {
         const seg = snakeSegments.pop();
         if (!seg) continue;
+        seg.getWorldPosition(_explodeWorldPos);
+        removedWorldPositions.push(_explodeWorldPos.clone());
         scene.remove(seg);
         if (seg.geometry) seg.geometry.dispose();
         if (seg.material) seg.material.dispose();
     }
+    queueTailExplosionTrail(removedWorldPositions, BODY_COLOR);
     updateScoreUi();
 }
 
@@ -956,7 +1194,7 @@ function beginSelfCollisionHit() {
 }
 
 function updateSelfHitPulse(delta) {
-    const headMat = snakeHead?.material;
+    const headMat = snakeHeadCore?.material;
     if (!headMat) return;
     if (selfHitImmunityRemaining > 0) {
         selfHitImmunityRemaining = Math.max(0, selfHitImmunityRemaining - delta);
@@ -1011,10 +1249,9 @@ function getHeadMultiplier() {
 function updateScoreUi() {
     const scoreEl = document.getElementById('score');
     if (scoreEl) scoreEl.innerText = score;
+    const heads = getHeadMultiplier();
     const multEl = document.getElementById('score-multiplier');
-    if (multEl) multEl.innerText = `x${getHeadMultiplier()}`;
-    const headsEl = document.getElementById('head-counter');
-    if (headsEl) headsEl.innerText = `Heads: ${getHeadMultiplier()}`;
+    if (multEl) multEl.innerText = `x${heads}`;
 }
 
 function formatGameTime(seconds) {
@@ -1040,31 +1277,50 @@ function updateMenuUi() {
     normalizeMenuIndex();
     const pauseEl = document.getElementById('menu-item-pause');
     const restartEl = document.getElementById('menu-item-restart');
+    const settingsEl = document.getElementById('menu-item-settings');
     const sfxEl = document.getElementById('menu-item-sfx');
     const sensitivityEl = document.getElementById('menu-item-sensitivity');
+    const backEl = document.getElementById('menu-item-back');
+    const menuEl = document.getElementById('menu');
+    const visible = getVisibleMenuActions();
+    if (menuEl) menuEl.classList.toggle('cooldown', isRestartOnCooldown());
     if (pauseEl) {
         pauseEl.textContent = gamePaused ? 'Resume' : 'Pause';
-        pauseEl.classList.toggle('hidden', !gameActive);
+        pauseEl.classList.toggle('hidden', visible.indexOf('pause') < 0);
     }
-    if (restartEl) restartEl.textContent = gameActive ? 'Restart Run' : 'Start Run';
+    if (restartEl) {
+        restartEl.classList.toggle('hidden', visible.indexOf('restart') < 0);
+        if (gameActive) {
+            restartEl.textContent = 'Restart Run';
+        } else {
+            const cooldownMs = getRestartCooldownRemainingMs();
+            if (cooldownMs > 0) {
+                const secondsLeft = Math.ceil(cooldownMs / 1000);
+                restartEl.textContent = `Start Run (${secondsLeft})`;
+            } else {
+                restartEl.textContent = 'Start Run';
+            }
+        }
+    }
+    if (settingsEl) settingsEl.classList.toggle('hidden', visible.indexOf('settings') < 0);
+    if (sfxEl) sfxEl.classList.toggle('hidden', visible.indexOf('sfx') < 0);
     if (sfxEl) sfxEl.textContent = `SFX: ${sfx && sfx.isEnabled() ? 'ON' : 'OFF'}`;
+    if (sensitivityEl) sensitivityEl.classList.toggle('hidden', visible.indexOf('sensitivity') < 0);
     if (sensitivityEl) sensitivityEl.textContent = `Mouse Sensitivity: ${mouseSensitivityX.toFixed(4)}`;
+    if (backEl) backEl.classList.toggle('hidden', visible.indexOf('back') < 0);
 
-    const items = [
-        document.getElementById('menu-item-pause'),
-        document.getElementById('menu-item-restart'),
-        document.getElementById('menu-item-sfx'),
-        document.getElementById('menu-item-sensitivity')
-    ];
+    const items = menuActions.map(action => document.getElementById(`menu-item-${action}`));
     const showHighlight = isPointerLocked();
     for (let i = 0; i < items.length; i++) {
         if (!items[i]) continue;
-        items[i].classList.toggle('active', showHighlight && i === menuIndex);
+        const action = menuActions[i];
+        items[i].classList.toggle('active', showHighlight && i === menuIndex && visible.indexOf(action) >= 0);
     }
 }
 
 function moveMenuSelection(dir) {
     if (!isMenuOpen()) return;
+    if (isRestartOnCooldown()) return;
     const visible = getVisibleMenuActions();
     const currentAction = menuActions[menuIndex];
     let visibleIndex = visible.indexOf(currentAction);
@@ -1088,6 +1344,7 @@ function adjustMouseSensitivity(dir) {
 
 function activateMenuSelection(button = 0) {
     if (!isMenuOpen()) return;
+    if (isRestartOnCooldown()) return;
     normalizeMenuIndex();
     const action = menuActions[menuIndex];
     if (action === 'pause') {
@@ -1095,8 +1352,14 @@ function activateMenuSelection(button = 0) {
         if (sfx) sfx.menuSelect();
         togglePause();
     } else if (action === 'restart') {
+        if (isRestartOnCooldown()) return;
         if (sfx) sfx.menuSelect();
         if (typeof window.startGame === 'function') window.startGame();
+    } else if (action === 'settings') {
+        if (sfx) sfx.menuSelect();
+        setMenuScreen(MENU_SCREEN_SETTINGS);
+        menuIndex = menuActions.indexOf('sfx');
+        updateMenuUi();
     } else if (action === 'sfx') {
         if (sfx) sfx.menuSelect();
         sfx.setEnabled(!sfx.isEnabled());
@@ -1104,6 +1367,11 @@ function activateMenuSelection(button = 0) {
     } else if (action === 'sensitivity') {
         if (sfx) sfx.menuSelect();
         adjustMouseSensitivity(button === 2 ? 1 : -1);
+    } else if (action === 'back') {
+        if (sfx) sfx.menuSelect();
+        setMenuScreen(MENU_SCREEN_MAIN);
+        menuIndex = menuActions.indexOf(getDefaultMainMenuAction());
+        updateMenuUi();
     }
 }
 
@@ -1128,12 +1396,12 @@ function handleMenuKeyDown(e) {
         e.preventDefault();
         moveMenuSelection(1);
     } else if (k === 'ArrowLeft' || k === 'a' || k === 'A') {
-        if (menuActions[menuIndex] !== 'sensitivity') return;
+        if (menuActions[menuIndex] !== 'sensitivity' || menuScreen !== MENU_SCREEN_SETTINGS) return;
         e.preventDefault();
         if (sfx) sfx.menuSelect();
         adjustMouseSensitivity(-1);
     } else if (k === 'ArrowRight' || k === 'd' || k === 'D') {
-        if (menuActions[menuIndex] !== 'sensitivity') return;
+        if (menuActions[menuIndex] !== 'sensitivity' || menuScreen !== MENU_SCREEN_SETTINGS) return;
         e.preventDefault();
         if (sfx) sfx.menuSelect();
         adjustMouseSensitivity(1);
@@ -1144,6 +1412,10 @@ function handleMenuKeyDown(e) {
 }
 
 function onGlobalPointerMove(e) {
+    if (isRestartOnCooldown()) {
+        menuMouseMoveCarry = 0;
+        return;
+    }
     if (!isMenuOpen() || isMobilePhoneLike() || !isPointerLocked()) {
         menuMouseMoveCarry = 0;
         return;
@@ -1259,7 +1531,8 @@ function pauseGame() {
     if (!isGameplayActive()) return;
     gamePaused = true;
     inputController.reset();
-    menuIndex = 0;
+    setMenuScreen(MENU_SCREEN_MAIN);
+    menuIndex = menuActions.indexOf('pause');
     const statusEl = document.getElementById('status');
     if (statusEl) statusEl.innerText = 'PAUSED';
     hideEndScoreUi();
@@ -1422,6 +1695,38 @@ function createFoodArrow() {
     return arrow;
 }
 
+function createSnakeHead() {
+    const head = new THREE.Group();
+
+    const coreMat = new THREE.MeshStandardMaterial({
+        color: HEAD_COLOR,
+        emissive: HEAD_COLOR,
+        emissiveIntensity: HEAD_EMISSIVE_INTENSITY,
+        flatShading: true
+    });
+
+    const skull = new THREE.Mesh(new THREE.OctahedronGeometry(0.78, 0), coreMat);
+    skull.scale.set(1.0, 0.66, 1.18);
+    head.add(skull);
+
+    const snout = new THREE.Mesh(new THREE.ConeGeometry(0.34, 1.0, 6, 1), coreMat);
+    snout.rotation.x = -Math.PI / 2;
+    snout.position.set(0, -0.03, -0.92);
+    head.add(snout);
+
+    const eyeMat = new THREE.MeshBasicMaterial({ color: HEAD_EYE_COLOR });
+    const eyeGeo = new THREE.OctahedronGeometry(0.15, 0);
+    const leftEye = new THREE.Mesh(eyeGeo, eyeMat);
+    leftEye.position.set(-0.23, 0.15, -0.78);
+    head.add(leftEye);
+    const rightEye = new THREE.Mesh(eyeGeo, eyeMat);
+    rightEye.position.set(0.23, 0.15, -0.78);
+    head.add(rightEye);
+
+    snakeHeadCore = skull;
+    return head;
+}
+
 function updateFoodArrow() {
     if (!foodArrow || !food || !camera) return;
     if (!isGameplayActive()) {
@@ -1440,6 +1745,13 @@ function updateFoodArrow() {
 
     foodArrow.quaternion.setFromUnitVectors(_foodArrowForward, _foodArrowToFood.normalize());
     foodArrow.visible = true;
+}
+
+function updateFoodVisuals(elapsedSeconds, delta) {
+    if (!food) return;
+    food.position.y = FOOD_FLOAT_BASE_Y + Math.sin(elapsedSeconds * FOOD_BOB_SPEED) * FOOD_BOB_AMPLITUDE;
+    food.rotation.y += FOOD_SPIN_Y_SPEED * delta;
+    food.rotation.x += FOOD_SPIN_X_SPEED * delta;
 }
 
 function init() {
@@ -1476,41 +1788,39 @@ function init() {
     setupComposer();
 
     // Snake Head
-    const headGeo = new THREE.CapsuleGeometry(
-        HEAD_CAPSULE_RADIUS,
-        HEAD_CAPSULE_LENGTH,
-        HEAD_CAPSULE_CAP_SEGMENTS,
-        HEAD_CAPSULE_RADIAL_SEGMENTS
-    );
-    const headMat = new THREE.MeshStandardMaterial({
-        color: HEAD_COLOR,
-        emissive: HEAD_COLOR,
-        emissiveIntensity: HEAD_EMISSIVE_INTENSITY
-    });
-    snakeHead = new THREE.Mesh(headGeo, headMat);
+    snakeHead = createSnakeHead();
     snakeHead.position.y = SNAKE_SURFACE_Y;
     scene.add(snakeHead);
 
     // Food
-    const foodGeo = new THREE.SphereGeometry(
-        FOOD_SPHERE_RADIUS,
-        FOOD_SPHERE_WIDTH_SEGMENTS,
-        FOOD_SPHERE_HEIGHT_SEGMENTS
-    );
+    const foodGeo = new THREE.IcosahedronGeometry(FOOD_ICOSAHEDRON_RADIUS, FOOD_ICOSAHEDRON_DETAIL);
     const foodMat = new THREE.MeshStandardMaterial({
         color: FOOD_COLOR,
         emissive: FOOD_COLOR,
         emissiveIntensity: FOOD_EMISSIVE_INTENSITY,
+        wireframe: true,
         fog: false
     });
-    food = new THREE.Mesh(foodGeo, foodMat);
-    food.position.y = SNAKE_SURFACE_Y;
+    const foodGlowMat = new THREE.MeshBasicMaterial({
+        color: FOOD_COLOR,
+        wireframe: true,
+        transparent: true,
+        opacity: 0.55,
+        depthWrite: false
+    });
+    const foodCore = new THREE.Mesh(foodGeo, foodMat);
+    const foodOuter = new THREE.Mesh(foodGeo, foodGlowMat);
+    foodOuter.scale.setScalar(1.045);
+    food = new THREE.Group();
+    food.add(foodCore);
+    food.add(foodOuter);
+    food.position.y = FOOD_FLOAT_BASE_Y;
     scene.add(food);
 
     foodArrow = createFoodArrow();
     scene.add(foodArrow);
 
-    spawnFood();
+    resetMenuDemoSnake();
 
     inputController = createInputController({
         isGameActive: () => isGameplayActive(),
@@ -1555,13 +1865,53 @@ function init() {
 }
 
 function spawnFood() {
+    function isSpawnValid(x, z) {
+        _foodSpawnCandidate.set(x, FOOD_FLOAT_BASE_Y, z);
+        if (snakeHead && _foodSpawnCandidate.distanceTo(snakeHead.position) < MIN_FOOD_DISTANCE_FROM_HEAD) {
+            return false;
+        }
+        for (let i = 0; i < snakeSegments.length; i++) {
+            if (_foodSpawnCandidate.distanceTo(snakeSegments[i].position) < MIN_FOOD_DISTANCE_FROM_BODY) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     const range = WORLD_SIZE * FOOD_SPAWN_RANGE_SCALE;
-    const x = (Math.random() - 0.5) * range;
-    const z = (Math.random() - 0.5) * range;
-    food.position.set(x, SNAKE_SURFACE_Y, z);
+    for (let i = 0; i < 96; i++) {
+        const x = (Math.random() - 0.5) * range;
+        const z = (Math.random() - 0.5) * range;
+        if (!isSpawnValid(x, z)) continue;
+        food.position.set(x, FOOD_FLOAT_BASE_Y, z);
+        return;
+    }
+
+    // Fallback: probe outward around the head directionally until we find a clear spot.
+    const hx = snakeHead ? snakeHead.position.x : 0;
+    const hz = snakeHead ? snakeHead.position.z : 0;
+    const maxR = range * 0.5;
+    for (let r = 10; r <= maxR; r += 6) {
+        for (let a = 0; a < 16; a++) {
+            const t = (a / 16) * Math.PI * 2;
+            const x = THREE.MathUtils.clamp(hx + Math.cos(t) * r, -range * 0.5, range * 0.5);
+            const z = THREE.MathUtils.clamp(hz + Math.sin(t) * r, -range * 0.5, range * 0.5);
+            if (!isSpawnValid(x, z)) continue;
+            food.position.set(x, FOOD_FLOAT_BASE_Y, z);
+            return;
+        }
+    }
+
+    food.position.set(0, FOOD_FLOAT_BASE_Y, 0);
 }
 
 window.startGame = function () {
+    restartCooldownUntilMs = 0;
+    restartCooldownLastShownSec = -1;
+    tailExplosionQueue.length = 0;
+    hasStartedRunOnce = true;
+    setMenuScreen(MENU_SCREEN_MAIN);
+    menuIndex = menuActions.indexOf('restart');
     score = 0;
     updateScoreUi();
     hideEndScoreUi();
@@ -1617,9 +1967,6 @@ window.startGame = function () {
     updateScoreUi();
 
     spawnFood();
-    while (snakeHead.position.distanceTo(food.position) < MIN_FOOD_DISTANCE_FROM_HEAD) {
-        spawnFood();
-    }
 
     if (!isMobilePhoneLike()) requestPointerLock();
     updatePointerHint();
@@ -1736,7 +2083,7 @@ function animate() {
         updateTimerUi();
         if (gameTimeRemaining <= 0) {
             if (sfx) sfx.crash();
-            endGame("TIME UP!");
+            endGame("TIME UP!", { restartCooldownMs: GAME_END_RESTART_COOLDOWN_MS });
         }
     }
 
@@ -1804,10 +2151,14 @@ function animate() {
         // Eat food
         if (snakeHead.position.distanceTo(food.position) < EAT_DISTANCE) {
             score += SCORE_PER_FOOD * getHeadMultiplier();
+            gameTimeRemaining += 1;
+            food.getWorldPosition(_foodEatBurstPos);
+            spawnFoodBurst(_foodEatBurstPos);
             spawnFood();
             addSegment();
             if (sfx) sfx.eat();
             updateScoreUi();
+            updateTimerUi();
         }
 
         // Wall collision — neon crack + camera zoom-out before game over
@@ -1833,11 +2184,31 @@ function animate() {
     } else {
         updateSelfHitPulse(delta);
         updateTimeChillUi(false);
+        if (shouldOrbitMenuCamera()) {
+            updateMenuDemoAutoplay(delta);
+            const t = clock.elapsedTime * MENU_IDLE_ORBIT_SPEED;
+            const target = snakeHead?.position ?? new THREE.Vector3(0, SNAKE_SURFACE_Y, 0);
+            camera.position.set(
+                target.x + Math.cos(t) * MENU_IDLE_ORBIT_RADIUS,
+                target.y + MENU_IDLE_ORBIT_HEIGHT,
+                target.z + Math.sin(t) * MENU_IDLE_ORBIT_RADIUS
+            );
+            camera.lookAt(target);
+        }
+        if (!crashAnimating) {
+            const cooldownMs = getRestartCooldownRemainingMs();
+            const secondsLeft = cooldownMs > 0 ? Math.ceil(cooldownMs / 1000) : 0;
+            if (secondsLeft !== restartCooldownLastShownSec) {
+                restartCooldownLastShownSec = secondsLeft;
+                updateMenuUi();
+            }
+        }
     }
 
     if (crashAnimating) {
         updateWallCrashVfx(delta);
     }
+    updateTailExplosionTrail(delta);
     updateSnakeBursts(delta);
 
     const targetFov = gameActive && boostingNow ? CAMERA_FOV_BOOST : CAMERA_FOV;
@@ -1854,13 +2225,18 @@ function animate() {
     if (motionBlurPass) motionBlurPass.uniforms.strength.value = boostMotionBlurAmt;
 
     updateFoodArrow();
+    updateFoodVisuals(clock.elapsedTime, delta);
     composer.render();
 }
 
-function endGame(message) {
+function endGame(message, options = {}) {
+    const restartCooldownMs = Math.max(0, options.restartCooldownMs || 0);
     gameActive = false;
     gamePaused = false;
-    menuIndex = 1;
+    setMenuScreen(MENU_SCREEN_MAIN);
+    restartCooldownUntilMs = restartCooldownMs > 0 ? (performance.now() + restartCooldownMs) : 0;
+    restartCooldownLastShownSec = -1;
+    menuIndex = menuActions.indexOf('restart');
     inputController.reset();
     updateTimeChillUi(false);
     updatePointerHint();
@@ -1870,11 +2246,8 @@ function endGame(message) {
     showEndScoreUi(finalScore, heads, headBonus, score);
     document.getElementById('status').innerText = message;
     document.getElementById('overlay').classList.remove('hidden');
+    updateMenuUi();
 }
 
 // Start the game
 init();
-
-
-
-

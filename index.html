@@ -44,12 +44,12 @@
             text-shadow: 0 0 10px rgba(57, 255, 20, 0.75);
             opacity: 0.95;
         }
-        #head-counter {
-            font-size: 42px;
+        #heads-inline {
+            font-size: 24px;
             font-weight: 700;
             color: #ffde59;
-            text-shadow: 0 0 10px rgba(255, 222, 89, 0.75);
-            opacity: 0.96;
+            text-shadow: 0 0 8px rgba(255, 222, 89, 0.55);
+            opacity: 0.9;
         }
         #game-timer {
             font-size: 42px;
@@ -77,6 +77,12 @@
             gap: 14px;
             min-width: 420px;
             align-items: center;
+            transition: opacity 0.2s ease, filter 0.2s ease;
+        }
+        #menu.cooldown {
+            opacity: 0.35;
+            filter: saturate(0.5);
+            pointer-events: none;
         }
         .menu-item {
             width: 100%;
@@ -175,7 +181,7 @@
             #score-label { font-size: 13px; }
             #score { font-size: 39px; } /* ~30% of desktop 130px */
             #score-multiplier { font-size: 14px; }
-            #head-counter { font-size: 13px; }
+            #heads-inline { font-size: 10px; }
             #game-timer { font-size: 14px; letter-spacing: 0.02em; }
             h1 { font-size: 35px; }
             #final-score { margin-top: 10px; font-size: 49px; }
@@ -251,7 +257,6 @@
             <span id="score-label">Score:</span>
             <span id="score">0</span>
             <span id="score-multiplier">x1</span>
-            <span id="head-counter">Heads: 1</span>
         </div>
         <div id="game-timer">02:00</div>
     </div>
@@ -266,8 +271,10 @@
         <div id="menu">
             <div class="menu-item hidden" data-menu-action="pause" id="menu-item-pause">Pause</div>
             <div class="menu-item active" data-menu-action="restart" id="menu-item-restart">Start Run</div>
-            <div class="menu-item" data-menu-action="sfx" id="menu-item-sfx">SFX: ON</div>
-            <div class="menu-item" data-menu-action="sensitivity" id="menu-item-sensitivity">Mouse Sensitivity: 0.0022</div>
+            <div class="menu-item" data-menu-action="settings" id="menu-item-settings">Settings</div>
+            <div class="menu-item hidden" data-menu-action="sfx" id="menu-item-sfx">SFX: ON</div>
+            <div class="menu-item hidden" data-menu-action="sensitivity" id="menu-item-sensitivity">Mouse Sensitivity: 0.0022</div>
+            <div class="menu-item hidden" data-menu-action="back" id="menu-item-back">Back</div>
         </div>
         <div id="menu-hint">Space pauses/resumes | Move mouse up/down to navigate | Left/right click to select/adjust</div>
     </div>
@@ -294,8 +301,5 @@
     <script type="module" src="./src/main.js"></script>
 </body>
 </html>
-
-
-
 
 
