@@ -1,6 +1,7 @@
 {
+  "id": "/",
   "name": "Viper Rush 3D",
-  "short_name": "ViperRush3D",
+  "short_name": "Viper Rush",
   "description": "Neon 3D snake runner.",
   "start_url": "./",
   "scope": "./",

@@ -1,0 +1,50 @@
+export const SPEED_BASE = 0.5;
+export const SPEED_BOOST_STEP = 0.05;
+export const SPEED_BOOST_MAX = 2.5;
+export const SPEED_BRAKE_STEP = 0.2;
+export const SPEED_MIN = 0.06;
+export const SPEED_RECOVER_STEP = 0.06;
+
+export const TIMECHILL_MAX = 1;
+export const TIMECHILL_DRAIN_PER_SEC = 0.62;
+export const TIMECHILL_RECHARGE_PER_SEC = 0.34;
+
+export const TURN_SPEED = 0.03;
+export const CONTROLLER_TURN_SHARPNESS = 1;
+export const CONTROLLER_TURN_RADIUS_SPEED_INFLUENCE = 0.35;
+export const CONTROLLER_TURN_SPEED_RADIUS_FACTOR = 1 / SPEED_BASE;
+
+export const TOUCH_TURN_SENSITIVITY = 1.45;
+export const TOUCH_TURN_DEADZONE = 0.06;
+export const TOUCH_SPEED_SENSITIVITY = 1.25;
+export const TOUCH_SPEED_DEADZONE = 0.08;
+
+export const MOUSE_SENSITIVITY_MIN = 0.0004;
+export const MOUSE_SENSITIVITY_MAX = 0.008;
+export const MOUSE_SENSITIVITY_STEP = 0.0003;
+export const DEFAULT_MOUSE_SENSITIVITY = 0.0022;
+
+export const GAMEPLAY_REFERENCE_FPS = 165;
+export const GAMEPLAY_SPEED_SCALE = 0.9;
+export const FORWARD_STEP = 0.25;
+
+export const EAT_DISTANCE = 1.2;
+export const EAT_DISTANCE_SQ = EAT_DISTANCE * EAT_DISTANCE;
+export const SCORE_PER_FOOD = 10;
+export const HEAD_END_BONUS = 100;
+export const GAME_DURATION_SECONDS = 120;
+export const GAME_END_RESTART_COOLDOWN_MS = 3000;
+
+export const SELF_COLLISION_START_INDEX = 3;
+export const SELF_COLLISION_DISTANCE = 0.7;
+export const SELF_COLLISION_DISTANCE_SQ = SELF_COLLISION_DISTANCE * SELF_COLLISION_DISTANCE;
+export const SELF_HIT_SEGMENT_LOSS = 10;
+export const SELF_HIT_IMMUNITY_DURATION = 1.0;
+export const SELF_HIT_PULSE_HZ = 9;
+export const SELF_HIT_PULSE_MIN = 0.45;
+export const SELF_HIT_PULSE_MAX = 1.9;
+export const SELF_HIT_TAIL_EXPLODE_STAGGER = 0.055;
+export const WALL_BOUNCE_INSET = 0.001;
+
+export const DEATH_REPLAY_CAPTURE_FPS = 30;
+export const DEATH_REPLAY_SPEED = 1.0;

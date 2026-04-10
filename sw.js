@@ -1,14 +1,13 @@
-const CACHE_NAME = 'viper-rush-3d-v5';
+const CACHE_NAME = 'viper-rush-3d-v6';
 const CORE_ASSETS = [
     './',
     './index.html',
     './manifest.json',
+    './sw.js',
     './src/main.js',
     './src/input-controller.js',
     './src/shaders.js',
     './src/sfx.js',
-    './src/liquidglass.js',
-    './src/lib/liquidGlass.js',
     './public/icons/icon-192.png',
     './public/icons/icon-512.png'
 ];

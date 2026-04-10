@@ -1,0 +1,74 @@
+import * as THREE from 'three';
+import { DEFAULT_MOUSE_SENSITIVITY, SPEED_BASE, TIMECHILL_MAX, GAME_DURATION_SECONDS } from './config/gameplay.js';
+import { CRASH_ANIM_DURATION } from './config/crash.js';
+import { MENU_SCREEN_MAIN } from './menu/constants.js';
+import { createTrailHistory } from './state/trail-history.js';
+import { createDeathReplayState } from './replay/death-replay.js';
+
+/**
+ * Shared mutable game state (single-player local runtime).
+ * Submodules import this instead of closing over main.js locals.
+ */
+export const runtime = {
+    mouseSensitivityX: DEFAULT_MOUSE_SENSITIVITY,
+    scene: null,
+    camera: null,
+    renderer: null,
+    clock: null,
+    composer: null,
+    motionBlurPass: null,
+    boostMotionBlurAmt: 0,
+    wallEdgeMaterial: null,
+    wallEdgeMaterials: [],
+    snakeHead: null,
+    food: null,
+    floor: null,
+    foodArrow: null,
+    floorGridRoot: null,
+    floorGridStaticGroup: null,
+    floorGridParallaxGroup: null,
+    floorGridMaterials: [],
+    snakeHeadCore: null,
+    score: 0,
+    gameActive: false,
+    snakeSegments: [],
+    bodySegmentGeometry: null,
+    bodySegmentCoreMaterial: null,
+    bodySegmentEdgeMaterial: null,
+    bodySegmentRodGeometry: null,
+    bodySegmentEdgePairs: null,
+    trailHistory: createTrailHistory(),
+    inputController: null,
+    input: null,
+    currentRotationY: 0,
+    speedMultiplier: SPEED_BASE,
+    timeChillEnergy: TIMECHILL_MAX,
+    gameTimeRemaining: GAME_DURATION_SECONDS,
+    selfHitImmunityRemaining: 0,
+    selfHitPulseTime: 0,
+    crashAnimating: false,
+    crashAnimTime: 0,
+    crashParticleMesh: null,
+    crashParticleVel: null,
+    crashGroundCrackGroup: null,
+    crashVerticalCrackGroup: null,
+    crashVfxRoot: null,
+    crashCrackTipMesh: null,
+    crashCamStart: new THREE.Vector3(),
+    crashCamEnd: new THREE.Vector3(),
+    crashTimelineDuration: CRASH_ANIM_DURATION,
+    crashExplodePieceIndex: 0,
+    crashSnakeBursts: [],
+    menuIndex: 1,
+    menuScreen: MENU_SCREEN_MAIN,
+    sfx: null,
+    burstSystem: null,
+    fullscreenRequestedOnce: false,
+    fullscreenAttemptInFlight: false,
+    gamePaused: false,
+    restartCooldownUntilMs: 0,
+    restartCooldownLastShownSec: -1,
+    hasStartedRunOnce: false,
+    tailExplosionQueue: [],
+    deathReplay: createDeathReplayState()
+};

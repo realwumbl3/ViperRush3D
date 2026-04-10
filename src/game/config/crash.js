@@ -1,0 +1,17 @@
+export const CRASH_ANIM_DURATION = 2.85;
+export const CRASH_PARTICLE_COUNT = 1400;
+export const CRACK_GROW_DURATION = 1.28;
+
+export const CRACK_LINE_GLOW_WORLD = 1.05;
+export const CRACK_LINE_CORE_WORLD = 0.34;
+export const CRACK_TIP_PARTICLE_COUNT = 10;
+
+export const SNAKE_EXPLODE_STAGGER = 0.09;
+export const SNAKE_EXPLODE_HEAD_DELAY = 0.06;
+export const SNAKE_BURST_COUNT = 100;
+export const SNAKE_BURST_LIFE_DECAY = 0.42;
+
+export const PARTICLE_FLOOR_Y = 0;
+export const PARTICLE_BOUNCE_RESTITUTION = 0.48;
+export const PARTICLE_BOUNCE_FRICTION = 0.82;
+export const PARTICLE_BOUNCE_SLEEP_VY = 0.55;

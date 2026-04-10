@@ -1,0 +1,141 @@
+import { MENU_SCREEN_MAIN, MENU_SCREEN_SETTINGS, menuActions } from './menu/constants.js';
+import {
+    MOUSE_SENSITIVITY_MIN,
+    MOUSE_SENSITIVITY_MAX,
+    MOUSE_SENSITIVITY_STEP
+} from './config/gameplay.js';
+import { STORAGE_KEY_MOUSE_SENS } from './config/menu.js';
+import { runtime } from './runtime.js';
+import { isGameplayActive, isMenuOpen } from './game-state.js';
+import { isRotationPlayBlocked, isMobilePhoneLike } from './platform/device.js';
+import {
+    updateMenuUi,
+    isPointerLocked,
+    isRestartOnCooldown,
+    getDefaultMainMenuAction,
+    setMenuScreen,
+    getVisibleMenuActions,
+    normalizeMenuIndex
+} from './ui/overlay.js';
+import { togglePause } from './pause.js';
+import { finishCrashSequence } from './crash/crash-sequence.js';
+import { startGame } from './start-game.js';
+import { clearServiceWorkerCacheAndReload } from '../sw-reset.js';
+
+export function moveMenuSelection(dir) {
+    if (isRotationPlayBlocked()) return;
+    if (!isMenuOpen()) return;
+    if (isRestartOnCooldown()) return;
+    const visible = getVisibleMenuActions();
+    const currentAction = menuActions[runtime.menuIndex];
+    let visibleIndex = visible.indexOf(currentAction);
+    if (visibleIndex < 0) visibleIndex = 0;
+    visibleIndex = (visibleIndex + dir + visible.length) % visible.length;
+    runtime.menuIndex = menuActions.indexOf(visible[visibleIndex]);
+    updateMenuUi();
+    if (runtime.sfx) runtime.sfx.menuMove();
+}
+
+export function adjustMouseSensitivity(dir) {
+    const clamped = Math.max(
+        MOUSE_SENSITIVITY_MIN,
+        Math.min(MOUSE_SENSITIVITY_MAX, runtime.mouseSensitivityX + dir * MOUSE_SENSITIVITY_STEP)
+    );
+    if (Math.abs(clamped - runtime.mouseSensitivityX) < 1e-7) return;
+    runtime.mouseSensitivityX = clamped;
+    localStorage.setItem(STORAGE_KEY_MOUSE_SENS, String(runtime.mouseSensitivityX));
+    updateMenuUi();
+}
+
+export function activateMenuSelection(button = 0) {
+    if (isRotationPlayBlocked()) return;
+    if (!isMenuOpen()) return;
+    if (isRestartOnCooldown()) return;
+    normalizeMenuIndex();
+    const action = menuActions[runtime.menuIndex];
+    if (action === 'pause') {
+        if (!runtime.gameActive) return;
+        if (runtime.sfx) runtime.sfx.menuSelect();
+        togglePause();
+    } else if (action === 'restart') {
+        if (isRestartOnCooldown()) return;
+        if (runtime.sfx) runtime.sfx.menuSelect();
+        startGame();
+    } else if (action === 'settings') {
+        if (runtime.sfx) runtime.sfx.menuSelect();
+        setMenuScreen(MENU_SCREEN_SETTINGS);
+        runtime.menuIndex = menuActions.indexOf('sfx');
+        updateMenuUi();
+    } else if (action === 'sfx') {
+        if (runtime.sfx) runtime.sfx.menuSelect();
+        runtime.sfx.setEnabled(!runtime.sfx.isEnabled());
+        updateMenuUi();
+    } else if (action === 'sensitivity') {
+        if (runtime.sfx) runtime.sfx.menuSelect();
+        adjustMouseSensitivity(button === 2 ? 1 : -1);
+    } else if (action === 'clearCache') {
+        if (runtime.sfx) runtime.sfx.menuSelect();
+        void clearServiceWorkerCacheAndReload();
+    } else if (action === 'back') {
+        if (runtime.sfx) runtime.sfx.menuSelect();
+        setMenuScreen(MENU_SCREEN_MAIN);
+        runtime.menuIndex = menuActions.indexOf(getDefaultMainMenuAction());
+        updateMenuUi();
+    }
+}
+
+export function handleMenuKeyDown(e) {
+    if (runtime.sfx) runtime.sfx.unlock();
+    if (isRotationPlayBlocked()) {
+        const k = e.key;
+        if (
+            k === ' ' || k === 'Spacebar' || k === 'Enter' || k === 'ArrowUp' || k === 'ArrowDown' ||
+            k === 'ArrowLeft' || k === 'ArrowRight' || k === 'w' || k === 'W' || k === 'a' || k === 'A' ||
+            k === 's' || k === 'S' || k === 'd' || k === 'D'
+        ) {
+            e.preventDefault();
+        }
+        return;
+    }
+    const k = e.key;
+    if ((k === ' ' || k === 'Spacebar') && runtime.crashAnimating) {
+        e.preventDefault();
+        finishCrashSequence();
+        return;
+    }
+    if ((k === ' ' || k === 'Spacebar') && isGameplayActive()) {
+        e.preventDefault();
+        togglePause();
+        return;
+    }
+    if (!isMenuOpen()) return;
+    if (k === 'ArrowUp' || k === 'w' || k === 'W') {
+        e.preventDefault();
+        moveMenuSelection(-1);
+    } else if (k === 'ArrowDown' || k === 's' || k === 'S') {
+        e.preventDefault();
+        moveMenuSelection(1);
+    } else if (k === 'ArrowLeft' || k === 'a' || k === 'A') {
+        if (menuActions[runtime.menuIndex] !== 'sensitivity' || runtime.menuScreen !== MENU_SCREEN_SETTINGS) return;
+        e.preventDefault();
+        if (runtime.sfx) runtime.sfx.menuSelect();
+        adjustMouseSensitivity(-1);
+    } else if (k === 'ArrowRight' || k === 'd' || k === 'D') {
+        if (menuActions[runtime.menuIndex] !== 'sensitivity' || runtime.menuScreen !== MENU_SCREEN_SETTINGS) return;
+        e.preventDefault();
+        if (runtime.sfx) runtime.sfx.menuSelect();
+        adjustMouseSensitivity(1);
+    } else if (k === 'Enter' || k === ' ') {
+        e.preventDefault();
+        activateMenuSelection();
+    }
+}
+
+export function onGlobalWheel(e) {
+    if (isRotationPlayBlocked()) return;
+    if (isRestartOnCooldown()) return;
+    if (!isMenuOpen() || isMobilePhoneLike() || !isPointerLocked()) return;
+    if (typeof e.deltaY !== 'number' || e.deltaY === 0) return;
+    if (e.cancelable) e.preventDefault();
+    moveMenuSelection(e.deltaY > 0 ? 1 : -1);
+}
