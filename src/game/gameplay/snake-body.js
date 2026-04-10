@@ -1,11 +1,4 @@
-import * as THREE from 'three';
 import {
-    HEAD_COLOR,
-    HEAD_EMISSIVE_INTENSITY,
-    BODY_ICOSAHEDRON_RADIUS,
-    BODY_ICOSAHEDRON_DETAIL,
-    BODY_EDGE_LINE_THICKNESS,
-    BODY_EDGE_LINE_SCALE,
     BODY_SEGMENT_SPACING,
     TRAIL_PATH_MARGIN,
     DIR_FORWARD,
@@ -13,7 +6,22 @@ import {
     BOX_LOCAL_FORWARD
 } from '../config/entities.js';
 import { runtime } from '../runtime.js';
-import { pathEdge, pathPos, pathTan, bodyRodUp } from '../scratch.js';
+import { pathEdge, pathPos, pathTan } from '../scratch.js';
+import { createGameBodySegmentModel } from '../models/body-segment.js';
+
+function disposeObject3d(object3d) {
+    if (!object3d) return;
+    object3d.traverse(node => {
+        if (node.geometry) node.geometry.dispose();
+        if (Array.isArray(node.material)) {
+            for (let i = 0; i < node.material.length; i++) {
+                if (node.material[i]) node.material[i].dispose();
+            }
+        } else if (node.material) {
+            node.material.dispose();
+        }
+    });
+}
 
 function getHistoryLength() {
     return runtime.trailHistory.getLength();
@@ -50,8 +58,7 @@ export function clearSnakeSegments() {
     for (let i = 0; i < runtime.snakeSegments.length; i++) {
         const seg = runtime.snakeSegments[i];
         runtime.scene.remove(seg);
-        if (seg.geometry) seg.geometry.dispose();
-        if (seg.material) seg.material.dispose();
+        disposeObject3d(seg);
     }
     runtime.snakeSegments = [];
 }
@@ -62,8 +69,7 @@ export function ensureSnakeSegmentCount(targetCount) {
         const seg = runtime.snakeSegments.pop();
         if (!seg) break;
         runtime.scene.remove(seg);
-        if (seg.geometry) seg.geometry.dispose();
-        if (seg.material) seg.material.dispose();
+        disposeObject3d(seg);
     }
 }
 
@@ -126,81 +132,8 @@ export function placeBodySegmentAlongTrail(segmentIndex, mesh) {
     mesh.quaternion.setFromUnitVectors(BOX_LOCAL_FORWARD, pathTan);
 }
 
-function ensureBodySegmentAssets() {
-    if (runtime.bodySegmentGeometry) return;
-
-    runtime.bodySegmentGeometry = new THREE.IcosahedronGeometry(BODY_ICOSAHEDRON_RADIUS, BODY_ICOSAHEDRON_DETAIL);
-    runtime.bodySegmentCoreMaterial = new THREE.MeshStandardMaterial({
-        color: 0x000000,
-        emissive: 0x000000,
-        transparent: true,
-        opacity: 0.5,
-        fog: true
-    });
-    runtime.bodySegmentEdgeMaterial = new THREE.MeshStandardMaterial({
-        color: HEAD_COLOR,
-        emissive: HEAD_COLOR,
-        emissiveIntensity: HEAD_EMISSIVE_INTENSITY,
-        roughness: 0.25,
-        metalness: 0.2,
-        fog: true
-    });
-    runtime.bodySegmentRodGeometry = new THREE.CylinderGeometry(
-        BODY_EDGE_LINE_THICKNESS * 0.5,
-        BODY_EDGE_LINE_THICKNESS * 0.5,
-        1,
-        6,
-        1
-    );
-
-    const edges = new THREE.EdgesGeometry(runtime.bodySegmentGeometry);
-    const positions = edges.getAttribute('position');
-    runtime.bodySegmentEdgePairs = [];
-    for (let i = 0; i < positions.count; i += 2) {
-        const a = new THREE.Vector3().fromBufferAttribute(positions, i);
-        const b = new THREE.Vector3().fromBufferAttribute(positions, i + 1);
-        runtime.bodySegmentEdgePairs.push([a, b]);
-    }
-    edges.dispose();
-}
-
 export function addSegment() {
-    ensureBodySegmentAssets();
-    const seg = new THREE.Group();
-
-    const core = new THREE.Mesh(runtime.bodySegmentGeometry, runtime.bodySegmentCoreMaterial);
-    seg.add(core);
-
-    const edgeInstances = new THREE.InstancedMesh(
-        runtime.bodySegmentRodGeometry,
-        runtime.bodySegmentEdgeMaterial,
-        runtime.bodySegmentEdgePairs.length
-    );
-    const _instPos = new THREE.Vector3();
-    const _instDir = new THREE.Vector3();
-    const _instQuat = new THREE.Quaternion();
-    const _instScale = new THREE.Vector3(1, 1, 1);
-    const _instMat = new THREE.Matrix4();
-    for (let i = 0; i < runtime.bodySegmentEdgePairs.length; i++) {
-        const a = runtime.bodySegmentEdgePairs[i][0];
-        const b = runtime.bodySegmentEdgePairs[i][1];
-        _instDir.copy(b).sub(a);
-        const len = _instDir.length();
-        if (len < 1e-8) {
-            _instScale.set(0, 0, 0);
-            _instPos.set(0, 0, 0);
-            _instQuat.identity();
-        } else {
-            _instPos.copy(a).addScaledVector(_instDir, 0.5);
-            _instQuat.setFromUnitVectors(bodyRodUp, _instDir.multiplyScalar(1 / len));
-            _instScale.set(1, len, 1);
-        }
-        _instMat.compose(_instPos, _instQuat, _instScale);
-        edgeInstances.setMatrixAt(i, _instMat);
-    }
-    edgeInstances.instanceMatrix.needsUpdate = true;
-    edgeInstances.scale.setScalar(BODY_EDGE_LINE_SCALE);
-    seg.add(edgeInstances);
+    const seg = createGameBodySegmentModel().mesh;
 
     if (runtime.snakeSegments.length > 0) {
         const tail = runtime.snakeSegments[runtime.snakeSegments.length - 1];

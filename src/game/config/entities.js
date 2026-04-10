@@ -17,6 +17,7 @@ export const FOOD_BOB_SPEED = 2.8;
 export const FOOD_SPIN_Y_SPEED = 2.2;
 export const FOOD_SPIN_X_SPEED = 0.7;
 export const FOOD_EAT_BURST_COUNT = 48;
+
 export const FOOD_ARROW_COLOR = 0xff2a2a;
 export const FOOD_ARROW_EMISSIVE_INTENSITY = 2.7;
 export const FOOD_ARROW_LENGTH = 0.9;

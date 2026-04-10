@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createFoodMesh } from './entities.js';
+import { createFoodMesh } from '../models/food-core.js';
 import { buildGlyphTextGroup } from './glyph-cache.js';
 
 const MENU_COLOR = 0xff2b2b;
@@ -120,7 +120,7 @@ export function initMenu3d({ scene, camera }) {
     camera.add(state.root);
 
     state.selector = createFoodMesh();
-    state.selector.scale.setScalar(1.16);
+    state.selector.scale.setScalar(0.58); // Half of previous 1.16
     state.selector.position.set(-1.45, 0, 0.2);
     state.selector.renderOrder = 901;
     state.root.add(state.selector);

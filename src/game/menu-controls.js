@@ -1,10 +1,16 @@
-import { MENU_SCREEN_MAIN, MENU_SCREEN_SETTINGS, menuActions } from './menu/constants.js';
+import {
+    MENU_SCREEN_MAIN,
+    MENU_SCREEN_SETTINGS,
+    MENU_SCREEN_EXTRAS,
+    MENU_SCREEN_ASSET_VIEWER,
+    menuActions
+} from './menu/constants.js';
 import {
     MOUSE_SENSITIVITY_MIN,
     MOUSE_SENSITIVITY_MAX,
     MOUSE_SENSITIVITY_STEP
 } from './config/gameplay.js';
-import { STORAGE_KEY_MOUSE_SENS } from './config/menu.js';
+import { STORAGE_KEY_MOUSE_SENS, STORAGE_KEY_SHOW_FPS } from './config/menu.js';
 import { runtime } from './runtime.js';
 import { isGameplayActive, isMenuOpen } from './game-state.js';
 import { isRotationPlayBlocked, isMobilePhoneLike } from './platform/device.js';
@@ -21,6 +27,7 @@ import { togglePause } from './pause.js';
 import { finishCrashSequence } from './crash/crash-sequence.js';
 import { startGame } from './start-game.js';
 import { clearServiceWorkerCacheAndReload } from '../sw-reset.js';
+import { cycleAssetViewerModel } from './render/asset-viewer-3d.js';
 
 export function moveMenuSelection(dir) {
     if (isRotationPlayBlocked()) return;
@@ -66,6 +73,16 @@ export function activateMenuSelection(button = 0) {
         setMenuScreen(MENU_SCREEN_SETTINGS);
         runtime.menuIndex = menuActions.indexOf('sfx');
         updateMenuUi();
+    } else if (action === 'extras') {
+        if (runtime.sfx) runtime.sfx.menuSelect();
+        setMenuScreen(MENU_SCREEN_EXTRAS);
+        runtime.menuIndex = menuActions.indexOf('assetViewer');
+        updateMenuUi();
+    } else if (action === 'assetViewer') {
+        if (runtime.sfx) runtime.sfx.menuSelect();
+        setMenuScreen(MENU_SCREEN_ASSET_VIEWER);
+        runtime.menuIndex = menuActions.indexOf('backAssetViewer');
+        updateMenuUi();
     } else if (action === 'sfx') {
         if (runtime.sfx) runtime.sfx.menuSelect();
         runtime.sfx.setEnabled(!runtime.sfx.isEnabled());
@@ -73,6 +90,11 @@ export function activateMenuSelection(button = 0) {
     } else if (action === 'sensitivity') {
         if (runtime.sfx) runtime.sfx.menuSelect();
         adjustMouseSensitivity(button === 2 ? 1 : -1);
+    } else if (action === 'fpsCounter') {
+        if (runtime.sfx) runtime.sfx.menuSelect();
+        runtime.showFpsCounter = !runtime.showFpsCounter;
+        localStorage.setItem(STORAGE_KEY_SHOW_FPS, runtime.showFpsCounter ? '1' : '0');
+        updateMenuUi();
     } else if (action === 'clearCache') {
         if (runtime.sfx) runtime.sfx.menuSelect();
         void clearServiceWorkerCacheAndReload();
@@ -80,6 +102,16 @@ export function activateMenuSelection(button = 0) {
         if (runtime.sfx) runtime.sfx.menuSelect();
         setMenuScreen(MENU_SCREEN_MAIN);
         runtime.menuIndex = menuActions.indexOf(getDefaultMainMenuAction());
+        updateMenuUi();
+    } else if (action === 'backExtras') {
+        if (runtime.sfx) runtime.sfx.menuSelect();
+        setMenuScreen(MENU_SCREEN_MAIN);
+        runtime.menuIndex = menuActions.indexOf('extras');
+        updateMenuUi();
+    } else if (action === 'backAssetViewer') {
+        if (runtime.sfx) runtime.sfx.menuSelect();
+        setMenuScreen(MENU_SCREEN_EXTRAS);
+        runtime.menuIndex = menuActions.indexOf('assetViewer');
         updateMenuUi();
     }
 }
@@ -137,5 +169,9 @@ export function onGlobalWheel(e) {
     if (!isMenuOpen() || isMobilePhoneLike() || !isPointerLocked()) return;
     if (typeof e.deltaY !== 'number' || e.deltaY === 0) return;
     if (e.cancelable) e.preventDefault();
+    if (runtime.menuScreen === MENU_SCREEN_ASSET_VIEWER) {
+        cycleAssetViewerModel(e.deltaY > 0 ? 1 : -1);
+        return;
+    }
     moveMenuSelection(e.deltaY > 0 ? 1 : -1);
 }

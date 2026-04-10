@@ -43,7 +43,6 @@ import {
     TOUCH_SPEED_DEADZONE
 } from './config/gameplay.js';
 import { buildArenaWalls, buildFloorGrid } from './render/arena.js';
-import { createFoodArrowMesh, createFoodMesh, createSnakeHeadMesh } from './render/entities.js';
 import { runtime } from './runtime.js';
 import { isGameplayActive, isMenuOpen } from './game-state.js';
 import { isMobilePhoneLike } from './platform/device.js';
@@ -51,6 +50,7 @@ import { isRotationPlayBlocked } from './platform/device.js';
 import {
     updatePointerHint,
     initMouseSensitivitySettings,
+    initFpsCounterSettings,
     updateTimeChillUi,
     updateTimerUi,
     hideEndScoreUi,
@@ -62,6 +62,7 @@ import { enforceRotationPlayGate } from './platform/rotation-gate.js';
 import { setupComposer } from './render/composer-setup.js';
 import { initMenu3d } from './render/menu-3d.js';
 import { initUi3d } from './render/ui-3d.js';
+import { initAssetViewer3d } from './render/asset-viewer-3d.js';
 import { resetMenuDemoSnake } from './gameplay/menu-demo.js';
 import {
     handleMenuKeyDown,
@@ -78,6 +79,9 @@ import { onResize } from './events/resize.js';
 import { startGame } from './start-game.js';
 import { animate } from './loop/animate.js';
 import { setBeginCrashSequencePointerHint } from './crash/crash-sequence.js';
+import { createGameSnakeHeadModel } from './models/snake-head.js';
+import { createGameFoodCoreModel } from './models/food-core.js';
+import { createGameFoodArrowModel } from './models/food-arrow.js';
 
 function createArenaWallsLocal() {
     runtime.wallEdgeMaterial = buildArenaWalls({
@@ -156,20 +160,23 @@ export function init() {
     createArenaWallsLocal();
     setupComposer();
 
-    const builtHead = createSnakeHeadMesh();
-    runtime.snakeHeadCore = builtHead.core;
-    runtime.snakeHead = builtHead.head;
+    const headModel = createGameSnakeHeadModel();
+    runtime.snakeHead = headModel.mesh;
+    runtime.snakeHeadCore = headModel.core || null;
     runtime.snakeHead.position.y = SNAKE_SURFACE_Y;
     runtime.scene.add(runtime.snakeHead);
 
-    runtime.food = createFoodMesh();
+    const foodModel = createGameFoodCoreModel();
+    runtime.food = foodModel.mesh;
     runtime.food.position.y = FOOD_FLOAT_BASE_Y;
     runtime.scene.add(runtime.food);
 
-    runtime.foodArrow = createFoodArrowMesh();
+    const foodArrowModel = createGameFoodArrowModel();
+    runtime.foodArrow = foodArrowModel.mesh;
     runtime.scene.add(runtime.foodArrow);
     initMenu3d({ scene: runtime.scene, camera: runtime.camera });
     initUi3d({ scene: runtime.scene, camera: runtime.camera });
+    initAssetViewer3d({ scene: runtime.scene, camera: runtime.camera });
 
     resetMenuDemoSnake();
 
@@ -206,6 +213,7 @@ export function init() {
     document.addEventListener('webkitfullscreenchange', onGlobalFullscreenChange);
 
     initMouseSensitivitySettings();
+    initFpsCounterSettings();
     updateTimeChillUi(false);
     updateTimerUi();
     hideEndScoreUi();

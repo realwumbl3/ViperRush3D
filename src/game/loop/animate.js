@@ -57,6 +57,7 @@ import {
     getHeadMultiplier,
     updateScoreUi,
     updateTimerUi,
+    updateFpsUi,
     updateTimeChillUi,
     updateMenuUi,
     getRestartCooldownRemainingMs
@@ -69,12 +70,21 @@ import { updateFloorParallax } from '../render/floor-parallax.js';
 import { updateFoodArrow, updateFoodVisuals } from '../render/food-view.js';
 import { updateMenu3dAnimation } from '../render/menu-3d.js';
 import { updateUi3dAnimation } from '../render/ui-3d.js';
+import { updateAssetViewer3dAnimation } from '../render/asset-viewer-3d.js';
 import { foodEatBurstPos } from '../scratch.js';
 import { enforceRotationPlayGate } from '../platform/rotation-gate.js';
 
 export function animate() {
     requestAnimationFrame(animate);
     const delta = runtime.clock.getDelta();
+    runtime.fpsSampleAccum += delta;
+    runtime.fpsSampleFrames += 1;
+    if (runtime.fpsSampleAccum >= 0.25) {
+        const fps = runtime.fpsSampleFrames / runtime.fpsSampleAccum;
+        runtime.fpsSampleAccum = 0;
+        runtime.fpsSampleFrames = 0;
+        if (runtime.showFpsCounter) updateFpsUi(fps);
+    }
     const gameplayStep = delta * GAMEPLAY_REFERENCE_FPS * GAMEPLAY_SPEED_SCALE;
     let boostingNow = false;
     runtime.inputController.updateGamepadInput();
@@ -235,6 +245,7 @@ export function animate() {
     updateFoodArrow();
     updateFoodVisuals(runtime.clock.elapsedTime, delta);
     updateMenu3dAnimation(runtime.clock.elapsedTime, delta);
+    updateAssetViewer3dAnimation(delta);
     updateUi3dAnimation(runtime.clock.elapsedTime, delta);
     runtime.composer.render();
 }

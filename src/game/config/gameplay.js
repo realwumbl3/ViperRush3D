@@ -28,7 +28,7 @@ export const GAMEPLAY_REFERENCE_FPS = 165;
 export const GAMEPLAY_SPEED_SCALE = 0.9;
 export const FORWARD_STEP = 0.25;
 
-export const EAT_DISTANCE = 1.2;
+export const EAT_DISTANCE = 2;
 export const EAT_DISTANCE_SQ = EAT_DISTANCE * EAT_DISTANCE;
 export const SCORE_PER_FOOD = 10;
 export const HEAD_END_BONUS = 100;

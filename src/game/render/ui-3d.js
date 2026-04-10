@@ -35,6 +35,8 @@ const state = {
         timeChillFraction: 1,
         pointerHintVisible: false,
         pointerHintText: 'CLICK TO LOCK POINTER',
+        fpsVisible: false,
+        fpsText: '0',
         menuVisible: true,
         endVisible: false,
         endScoreText: '',
@@ -110,6 +112,7 @@ function rebuild() {
     if (!state.root) return;
     const d = state.data;
     replaceTextMesh('hint', state.hudRoot, d.pointerHintText, 0.12, COLOR_SUB, 0, -2.2, -5.8);
+    replaceTextMesh('fps', state.hudRoot, `FPS ${d.fpsText}`, 0.12, COLOR_SUB, -1.62, 1.68, -5.8);
     for (let i = 0; i < state.wallPanels.length; i++) {
         const panel = state.wallPanels[i];
         replaceTextMesh(`${panel.id}:scoreLabel`, panel.root, 'SCORE', 1.12, COLOR_MAIN, WALL_LABEL_RIGHT_X, WALL_ROW_SCORE_Y, 0, 'right');
@@ -129,6 +132,7 @@ function rebuild() {
     replaceTextMesh('endHigh', state.menuRoot, d.endHighText, 0.09, COLOR_SUB, 0, 0.08, -7.2);
 
     if (state.meshes.hint) state.meshes.hint.visible = d.pointerHintVisible && d.hudVisible;
+    if (state.meshes.fps) state.meshes.fps.visible = d.fpsVisible && d.hudVisible;
     for (let i = 0; i < state.wallPanels.length; i++) {
         const panel = state.wallPanels[i];
         const scoreLabel = state.meshes[`${panel.id}:scoreLabel`];
