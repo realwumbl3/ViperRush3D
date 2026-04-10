@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { Line2 } from 'three/addons/lines/Line2.js';
 import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
@@ -10,7 +9,12 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { createInputController } from './input-controller.js';
 import { SubtleBoostMotionBlurShader } from './shaders.js';
 import { createSfx } from './sfx.js';
-import { createLiquidGlassPill } from './liquidglass.js';
+
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch(() => { });
+    });
+}
 
 // ---------------------------------------------------------------------------
 // Config — tweak gameplay and visuals here
@@ -18,8 +22,8 @@ import { createLiquidGlassPill } from './liquidglass.js';
 const WORLD_SIZE = 40;
 /** Vertical arena walls (collision bounds ±WORLD_SIZE) */
 const ARENA_WALL_HEIGHT = 200;
-const ARENA_WALL_OPACITY = 0.09;
-const ARENA_WALL_COLOR = 0x00c8ff;
+const ARENA_WALL_OPACITY = 0.06;
+const ARENA_WALL_COLOR = 0x000000;
 const ARENA_WALL_EDGE_WIDTH = 0.14;
 /** Subtle FOV widen while LMB boosting */
 const CAMERA_FOV_BOOST = 80;
@@ -29,6 +33,11 @@ const BOOST_MOTION_BLUR_MAX = 0.55;
 const BOOST_MOTION_BLUR_LERP = 14;
 const FLOOR_GRID_EXTENT = WORLD_SIZE * 2;
 const GRID_DIVISIONS = 50;
+const GRID_LINE_THICKNESS_PX = 2;
+const GRID_AXIS_EDGE_THICKNESS_PX = 4;
+const GRID_OPACITY = 0.14;
+const FLOOR_PARALLAX_FACTOR = 0.12;
+const FLOOR_PARALLAX_LERP = 7;
 
 const SCENE_BACKGROUND = 0x050505;
 const FOG_NEAR = 15;
@@ -46,7 +55,7 @@ const POINT_LIGHT_DISTANCE = 60;
 const POINT_LIGHT_Y = 15;
 
 const GRID_COLOR_MAIN = 0x39ff14;
-const GRID_COLOR_SUB = 0x222222;
+const GRID_COLOR_SUB = 0x39ff14;
 const FLOOR_COLOR = 0x000000;
 
 const SNAKE_SURFACE_Y = 0.6;
@@ -70,6 +79,7 @@ const FOOD_ARROW_COLOR = 0xff2a2a;
 const FOOD_ARROW_EMISSIVE_INTENSITY = 2.7;
 const FOOD_ARROW_LENGTH = 0.9;
 const FOOD_ARROW_WIDTH = 0.22;
+const FOOD_ARROW_LINE_THICKNESS = 0.08;
 const FOOD_ARROW_CAMERA_OFFSET = new THREE.Vector3(0, 3, -5.8);
 
 const INITIAL_BODY_SEGMENTS = 12;
@@ -77,16 +87,11 @@ const BODY_SEGMENT_SPACING = 2.5;
 /** Extra path length kept past the tail so trimming never eats the real trail */
 const TRAIL_PATH_MARGIN = 8;
 
-/** Body cubes: width (X), height (Y), depth (Z); local +Z aligns with travel direction */
-const BODY_BOX_WIDTH = 0.85;
-const BODY_BOX_HEIGHT = 0.85;
-const BODY_BOX_DEPTH = 1.0;
-/** RoundedBoxGeometry: segment count per axis (higher = smoother bevel) */
-const BODY_ROUND_SEGMENTS = 3;
-/** Corner radius (clamped by Three.js to half the shortest edge) */
-const BODY_ROUND_RADIUS = 0.14;
+const BODY_ICOSAHEDRON_RADIUS = FOOD_ICOSAHEDRON_RADIUS;
+const BODY_ICOSAHEDRON_DETAIL = FOOD_ICOSAHEDRON_DETAIL;
+const BODY_EDGE_LINE_THICKNESS = 0.07;
+const BODY_EDGE_LINE_SCALE = 1.045;
 const BODY_COLOR = 0x27ae60;
-const BODY_EMISSIVE_INTENSITY = 1.2;
 const MIN_FOOD_DISTANCE_FROM_BODY = 3.35;
 
 const MIN_FOOD_DISTANCE_FROM_HEAD = 30;
@@ -117,6 +122,11 @@ const MOUSE_SENSITIVITY_STEP = 0.0003;
 const DEFAULT_MOUSE_SENSITIVITY = 0.0022;
 let mouseSensitivityX = DEFAULT_MOUSE_SENSITIVITY;
 const MENU_MOUSE_MOVE_STEP = 28;
+const ROTATE_BLOCK_MAX_WIDTH = 1100;
+/** Match gameplay feel currently tuned at 165 Hz, but run frame-rate independent. */
+const GAMEPLAY_REFERENCE_FPS = 165;
+/** Global tuning after delta conversion (1.0 = exact 165 Hz match). */
+const GAMEPLAY_SPEED_SCALE = 0.9;
 const FORWARD_STEP = 0.25;
 const STORAGE_KEY_MOUSE_SENS = 'neonDrift_mouseSensitivity';
 
@@ -135,6 +145,7 @@ const SELF_HIT_PULSE_HZ = 9;
 const SELF_HIT_PULSE_MIN = 0.45;
 const SELF_HIT_PULSE_MAX = 1.9;
 const SELF_HIT_TAIL_EXPLODE_STAGGER = 0.055;
+const WALL_BOUNCE_INSET = 0.001;
 
 const CAMERA_OFFSET_X = 0;
 const CAMERA_OFFSET_Y = 6;
@@ -151,6 +162,8 @@ const MENU_DEMO_INITIAL_SEGMENTS = 8;
 const MENU_DEMO_MAX_SEGMENTS = 22;
 const MENU_DEMO_WALL_MARGIN = 9.5;
 const MENU_DEMO_BODY_AVOID_RADIUS = 6.5;
+const DEATH_REPLAY_CAPTURE_FPS = 30;
+const DEATH_REPLAY_SPEED = 1.0;
 
 const CRASH_ANIM_DURATION = 2.85;
 const CRASH_PARTICLE_COUNT = 1400;
@@ -187,11 +200,21 @@ let composer;
 let motionBlurPass;
 let boostMotionBlurAmt = 0;
 let wallEdgeMaterial;
+const wallEdgeMaterials = [];
 let snakeHead, food, floor, foodArrow;
+let floorGridRoot = null;
+let floorGridStaticGroup = null;
+let floorGridParallaxGroup = null;
+const floorGridMaterials = [];
 let snakeHeadCore = null;
 let score = 0;
 let gameActive = false;
 let snakeSegments = [];
+let bodySegmentGeometry = null;
+let bodySegmentCoreMaterial = null;
+let bodySegmentEdgeMaterial = null;
+let bodySegmentRodGeometry = null;
+let bodySegmentEdgePairs = null;
 let positionHistory = [];
 let inputController = null;
 let input = null;
@@ -220,12 +243,16 @@ const _explodeWorldPos = new THREE.Vector3();
 const _inTanA = new THREE.Vector3();
 const _inTanB = new THREE.Vector3();
 const _headBaseColor = new THREE.Color(HEAD_COLOR);
+const _headBlackColor = new THREE.Color(0x000000);
 const _headPulseColor = new THREE.Color(HEAD_COLOR);
 const _foodArrowWorldPos = new THREE.Vector3();
 const _foodArrowToFood = new THREE.Vector3();
 const _foodArrowForward = new THREE.Vector3(0, 0, 1);
+const _bodyRodUp = new THREE.Vector3(0, 1, 0);
 const _foodEatBurstPos = new THREE.Vector3();
 const _foodSpawnCandidate = new THREE.Vector3();
+const _floorParallaxTarget = new THREE.Vector3();
+const _floorParallaxOffset = new THREE.Vector3();
 const MENU_SCREEN_MAIN = 'main';
 const MENU_SCREEN_SETTINGS = 'settings';
 const menuActions = ['pause', 'restart', 'settings', 'sfx', 'sensitivity', 'back'];
@@ -240,6 +267,12 @@ let restartCooldownUntilMs = 0;
 let restartCooldownLastShownSec = -1;
 let hasStartedRunOnce = false;
 const tailExplosionQueue = [];
+const deathReplayFrames = [];
+const deathReplayEventsByFrame = new Map();
+let deathReplayCaptureAccumulator = 0;
+let deathReplayPlaybackAccumulator = 0;
+let deathReplayActive = false;
+let deathReplayFrameIndex = 0;
 
 function isGameplayActive() {
     return gameActive && !gamePaused;
@@ -282,6 +315,137 @@ function clearSnakeSegments() {
         if (seg.material) seg.material.dispose();
     }
     snakeSegments = [];
+}
+
+function clearDeathReplay() {
+    deathReplayFrames.length = 0;
+    deathReplayEventsByFrame.clear();
+    deathReplayCaptureAccumulator = 0;
+    deathReplayPlaybackAccumulator = 0;
+    deathReplayActive = false;
+    deathReplayFrameIndex = 0;
+}
+
+function recordDeathReplayEvent(type, data = null) {
+    if (!isGameplayActive()) return;
+    const frameIndex = Math.max(0, deathReplayFrames.length - 1);
+    let bucket = deathReplayEventsByFrame.get(frameIndex);
+    if (!bucket) {
+        bucket = [];
+        deathReplayEventsByFrame.set(frameIndex, bucket);
+    }
+    bucket.push({ type, data });
+}
+
+function captureDeathReplayFrame() {
+    if (!snakeHead) return;
+    const segCount = snakeSegments.length;
+    const segPos = new Float32Array(segCount * 3);
+    const segQuat = new Float32Array(segCount * 4);
+    for (let i = 0; i < segCount; i++) {
+        const s = snakeSegments[i];
+        const p = s.position;
+        const q = s.quaternion;
+        const pIdx = i * 3;
+        const qIdx = i * 4;
+        segPos[pIdx] = p.x;
+        segPos[pIdx + 1] = p.y;
+        segPos[pIdx + 2] = p.z;
+        segQuat[qIdx] = q.x;
+        segQuat[qIdx + 1] = q.y;
+        segQuat[qIdx + 2] = q.z;
+        segQuat[qIdx + 3] = q.w;
+    }
+    deathReplayFrames.push({
+        hx: snakeHead.position.x,
+        hy: snakeHead.position.y,
+        hz: snakeHead.position.z,
+        ry: currentRotationY,
+        fx: food ? food.position.x : 0,
+        fy: food ? food.position.y : FOOD_FLOAT_BASE_Y,
+        fz: food ? food.position.z : 0,
+        segPos,
+        segQuat
+    });
+}
+
+function ensureSnakeSegmentCount(targetCount) {
+    while (snakeSegments.length < targetCount) addSegment();
+    while (snakeSegments.length > targetCount) {
+        const seg = snakeSegments.pop();
+        if (!seg) break;
+        scene.remove(seg);
+        if (seg.geometry) seg.geometry.dispose();
+        if (seg.material) seg.material.dispose();
+    }
+}
+
+function applyDeathReplayFrame(frame) {
+    const segCount = frame.segPos.length / 3;
+    ensureSnakeSegmentCount(segCount);
+    snakeHead.visible = true;
+    snakeHead.position.set(frame.hx, frame.hy, frame.hz);
+    currentRotationY = frame.ry;
+    snakeHead.rotation.y = currentRotationY;
+    if (food) {
+        food.visible = true;
+        food.position.set(frame.fx, frame.fy, frame.fz);
+    }
+
+    for (let i = 0; i < segCount; i++) {
+        const seg = snakeSegments[i];
+        const pIdx = i * 3;
+        const qIdx = i * 4;
+        seg.visible = true;
+        seg.position.set(frame.segPos[pIdx], frame.segPos[pIdx + 1], frame.segPos[pIdx + 2]);
+        seg.quaternion.set(frame.segQuat[qIdx], frame.segQuat[qIdx + 1], frame.segQuat[qIdx + 2], frame.segQuat[qIdx + 3]);
+    }
+}
+
+function playDeathReplayEventsForFrame(frameIndex) {
+    const events = deathReplayEventsByFrame.get(frameIndex);
+    if (!events || events.length === 0) return;
+    for (let i = 0; i < events.length; i++) {
+        const ev = events[i];
+        if (ev.type === 'foodBurst' && ev.data) {
+            const p = ev.data;
+            spawnFoodBurst(new THREE.Vector3(p.x, p.y, p.z));
+        } else if (ev.type === 'hitBurst' && ev.data) {
+            const p = ev.data;
+            const wp = new THREE.Vector3(p.x, p.y, p.z);
+            spawnSnakeBurst(wp, 0x111111);
+            spawnSnakeBurst(wp, 0x39ff14);
+        } else if (ev.type === 'tailTrail' && ev.data && Array.isArray(ev.data.points)) {
+            const pts = ev.data.points.map((p) => new THREE.Vector3(p.x, p.y, p.z));
+            queueTailExplosionTrail(pts, ev.data.color ?? BODY_COLOR);
+        }
+    }
+}
+
+function startDeathReplay() {
+    deathReplayActive = deathReplayFrames.length > 1;
+    deathReplayFrameIndex = 0;
+    deathReplayPlaybackAccumulator = 0;
+    if (!deathReplayActive) return;
+    applyDeathReplayFrame(deathReplayFrames[0]);
+    playDeathReplayEventsForFrame(0);
+}
+
+function updateDeathReplay(delta) {
+    if (!deathReplayActive || deathReplayFrames.length < 2) return;
+    deathReplayPlaybackAccumulator += delta * DEATH_REPLAY_CAPTURE_FPS * DEATH_REPLAY_SPEED;
+    while (deathReplayPlaybackAccumulator >= 1) {
+        deathReplayPlaybackAccumulator -= 1;
+        deathReplayFrameIndex = (deathReplayFrameIndex + 1) % deathReplayFrames.length;
+        playDeathReplayEventsForFrame(deathReplayFrameIndex);
+    }
+    applyDeathReplayFrame(deathReplayFrames[deathReplayFrameIndex]);
+
+    const camOffset = new THREE.Vector3(CAMERA_OFFSET_X, CAMERA_OFFSET_Y, CAMERA_OFFSET_Z)
+        .applyAxisAngle(DIR_WORLD_UP, currentRotationY);
+    camOffset.add(snakeHead.position);
+    camera.position.lerp(camOffset, Math.min(1, CAMERA_FOLLOW_LERP * 1.25));
+    camera.lookAt(snakeHead.position);
 }
 
 function resetMenuDemoSnake() {
@@ -422,6 +586,20 @@ function isMobilePhoneLike() {
         (hasTouchApi && coarse) ||
         touchPoints > 1
     );
+}
+
+function isRotationPlayBlocked() {
+    if (!isMobilePhoneLike()) return false;
+    if (window.matchMedia) {
+        return window.matchMedia('(orientation: portrait)').matches && window.innerWidth <= ROTATE_BLOCK_MAX_WIDTH;
+    }
+    return window.innerHeight > window.innerWidth && window.innerWidth <= ROTATE_BLOCK_MAX_WIDTH;
+}
+
+function enforceRotationPlayGate() {
+    if (!isRotationPlayBlocked()) return;
+    inputController?.reset();
+    if (isGameplayActive()) pauseGame();
 }
 
 function isTouchActivationEvent(e) {
@@ -1124,6 +1302,7 @@ function updateWallCrashVfx(delta) {
 
 function beginCrashSequence(spawnVfx) {
     gameActive = false;
+    if (sfx && typeof sfx.death === 'function') sfx.death();
     inputController.reset();
     updatePointerHint();
 
@@ -1172,6 +1351,12 @@ function removeTailSegments(count) {
         if (seg.geometry) seg.geometry.dispose();
         if (seg.material) seg.material.dispose();
     }
+    if (removedWorldPositions.length > 0) {
+        recordDeathReplayEvent('tailTrail', {
+            color: BODY_COLOR,
+            points: removedWorldPositions.map((p) => ({ x: p.x, y: p.y, z: p.z }))
+        });
+    }
     queueTailExplosionTrail(removedWorldPositions, BODY_COLOR);
     updateScoreUi();
 }
@@ -1185,6 +1370,7 @@ function beginSelfCollisionHit() {
     snakeHead.getWorldPosition(_explodeWorldPos);
     spawnSnakeBurst(_explodeWorldPos, 0x111111);
     spawnSnakeBurst(_explodeWorldPos, 0x39ff14);
+    recordDeathReplayEvent('hitBurst', { x: _explodeWorldPos.x, y: _explodeWorldPos.y, z: _explodeWorldPos.z });
     removeTailSegments(SELF_HIT_SEGMENT_LOSS);
     if (snakeSegments.length <= 0) {
         beginSelfCollisionCrash();
@@ -1194,6 +1380,54 @@ function beginSelfCollisionHit() {
     selfHitPulseTime = 0;
 }
 
+function handleWallBounceHit() {
+    const p = snakeHead.position;
+    const hitXPos = p.x > WORLD_SIZE;
+    const hitXNeg = p.x < -WORLD_SIZE;
+    const hitZPos = p.z > WORLD_SIZE;
+    const hitZNeg = p.z < -WORLD_SIZE;
+    const hitX = hitXPos || hitXNeg;
+    const hitZ = hitZPos || hitZNeg;
+    if (!hitX && !hitZ) return false;
+
+    if (hitXPos) p.x = WORLD_SIZE - (p.x - WORLD_SIZE);
+    else if (hitXNeg) p.x = -WORLD_SIZE + (-WORLD_SIZE - p.x);
+    if (hitZPos) p.z = WORLD_SIZE - (p.z - WORLD_SIZE);
+    else if (hitZNeg) p.z = -WORLD_SIZE + (-WORLD_SIZE - p.z);
+    p.x = THREE.MathUtils.clamp(p.x, -WORLD_SIZE + WALL_BOUNCE_INSET, WORLD_SIZE - WALL_BOUNCE_INSET);
+    p.z = THREE.MathUtils.clamp(p.z, -WORLD_SIZE + WALL_BOUNCE_INSET, WORLD_SIZE - WALL_BOUNCE_INSET);
+
+    const moveDir = DIR_FORWARD.clone().applyAxisAngle(DIR_WORLD_UP, currentRotationY);
+    if (hitXPos) moveDir.reflect(new THREE.Vector3(-1, 0, 0));
+    else if (hitXNeg) moveDir.reflect(new THREE.Vector3(1, 0, 0));
+    if (hitZPos) moveDir.reflect(new THREE.Vector3(0, 0, -1));
+    else if (hitZNeg) moveDir.reflect(new THREE.Vector3(0, 0, 1));
+    moveDir.normalize();
+    currentRotationY = Math.atan2(-moveDir.x, -moveDir.z);
+    snakeHead.rotation.y = currentRotationY;
+
+    if (selfHitImmunityRemaining <= 0) {
+        if (sfx) {
+            if (typeof sfx.bounce === 'function') sfx.bounce();
+            else if (typeof sfx.selfHit === 'function') sfx.selfHit();
+            else sfx.hit();
+        }
+        snakeHead.getWorldPosition(_explodeWorldPos);
+        spawnSnakeBurst(_explodeWorldPos, 0x111111);
+        spawnSnakeBurst(_explodeWorldPos, 0x39ff14);
+        recordDeathReplayEvent('hitBurst', { x: _explodeWorldPos.x, y: _explodeWorldPos.y, z: _explodeWorldPos.z });
+        removeTailSegments(SELF_HIT_SEGMENT_LOSS);
+        if (snakeSegments.length <= 0) {
+            beginSelfCollisionCrash();
+            return true;
+        }
+        selfHitImmunityRemaining = SELF_HIT_IMMUNITY_DURATION;
+        selfHitPulseTime = 0;
+    }
+
+    return true;
+}
+
 function updateSelfHitPulse(delta) {
     const headMat = snakeHeadCore?.material;
     if (!headMat) return;
@@ -1201,9 +1435,8 @@ function updateSelfHitPulse(delta) {
         selfHitImmunityRemaining = Math.max(0, selfHitImmunityRemaining - delta);
         selfHitPulseTime += delta;
         const s = 0.5 + 0.5 * Math.sin(selfHitPulseTime * SELF_HIT_PULSE_HZ * Math.PI * 2);
-        const mul = SELF_HIT_PULSE_MIN + (SELF_HIT_PULSE_MAX - SELF_HIT_PULSE_MIN) * s;
-        const shade = 0.08 + 0.92 * s;
-        _headPulseColor.copy(_headBaseColor).multiplyScalar(shade);
+        const mul = 0.3 + 0.7 * (1 - s);
+        _headPulseColor.copy(_headBaseColor).lerp(_headBlackColor, s);
         headMat.color.copy(_headPulseColor);
         headMat.emissive.copy(_headPulseColor);
         headMat.emissiveIntensity = HEAD_EMISSIVE_INTENSITY * mul;
@@ -1220,6 +1453,7 @@ function isPointerLocked() {
 
 function requestPointerLock() {
     if (!renderer?.domElement?.requestPointerLock) return;
+    if (isRotationPlayBlocked()) return;
     try {
         renderer.domElement.requestPointerLock();
     } catch (_) {
@@ -1230,7 +1464,7 @@ function requestPointerLock() {
 function updatePointerHint() {
     const el = document.getElementById('pointer-hint');
     if (!el) return;
-    const show = gameActive && !isPointerLocked();
+    const show = gameActive && !isPointerLocked() && !isRotationPlayBlocked();
     el.classList.toggle('hidden', !show);
 }
 
@@ -1270,7 +1504,7 @@ function updateTimerUi() {
 function updateTouchControlsUi() {
     const el = document.getElementById('touch-controls');
     if (!el) return;
-    const show = isMobilePhoneLike();
+    const show = isMobilePhoneLike() && !isRotationPlayBlocked();
     el.classList.toggle('inactive', !show);
 }
 
@@ -1320,6 +1554,7 @@ function updateMenuUi() {
 }
 
 function moveMenuSelection(dir) {
+    if (isRotationPlayBlocked()) return;
     if (!isMenuOpen()) return;
     if (isRestartOnCooldown()) return;
     const visible = getVisibleMenuActions();
@@ -1344,6 +1579,7 @@ function adjustMouseSensitivity(dir) {
 }
 
 function activateMenuSelection(button = 0) {
+    if (isRotationPlayBlocked()) return;
     if (!isMenuOpen()) return;
     if (isRestartOnCooldown()) return;
     normalizeMenuIndex();
@@ -1378,6 +1614,17 @@ function activateMenuSelection(button = 0) {
 
 function handleMenuKeyDown(e) {
     if (sfx) sfx.unlock();
+    if (isRotationPlayBlocked()) {
+        const k = e.key;
+        if (
+            k === ' ' || k === 'Spacebar' || k === 'Enter' || k === 'ArrowUp' || k === 'ArrowDown' ||
+            k === 'ArrowLeft' || k === 'ArrowRight' || k === 'w' || k === 'W' || k === 'a' || k === 'A' ||
+            k === 's' || k === 'S' || k === 'd' || k === 'D'
+        ) {
+            e.preventDefault();
+        }
+        return;
+    }
     const k = e.key;
     if ((k === ' ' || k === 'Spacebar') && crashAnimating) {
         e.preventDefault();
@@ -1413,6 +1660,10 @@ function handleMenuKeyDown(e) {
 }
 
 function onGlobalPointerMove(e) {
+    if (isRotationPlayBlocked()) {
+        menuMouseMoveCarry = 0;
+        return;
+    }
     if (isRestartOnCooldown()) {
         menuMouseMoveCarry = 0;
         return;
@@ -1435,6 +1686,7 @@ function onGlobalPointerMove(e) {
 
 function onGlobalPointerDown(e) {
     if (sfx) sfx.unlock();
+    if (isRotationPlayBlocked()) return;
     requestFullscreenOnFirstTouch(e);
     if (crashAnimating && (e.button === 0 || e.button === 2)) {
         if (e.button === 2 && e.cancelable) e.preventDefault();
@@ -1459,17 +1711,19 @@ function onGlobalPointerDown(e) {
 }
 
 function onGlobalTouchStart(e) {
+    if (isRotationPlayBlocked()) return;
     requestFullscreenOnFirstTouch(e);
 }
 
 function onGlobalPointerLockChange() {
     updateMenuUi();
-    if (!isMobilePhoneLike() && !isPointerLocked() && !gamePaused) requestPointerLock();
+    if (!isMobilePhoneLike() && !isPointerLocked() && !gamePaused && !isRotationPlayBlocked()) requestPointerLock();
 }
 
 function onGlobalFullscreenChange() {
     onResize();
     updateTouchControlsUi();
+    enforceRotationPlayGate();
 }
 
 function getSavedHighScore() {
@@ -1543,6 +1797,7 @@ function pauseGame() {
 }
 
 function resumeGame() {
+    if (isRotationPlayBlocked()) return;
     if (!gamePaused || !gameActive) return;
     gamePaused = false;
     document.getElementById('overlay').classList.add('hidden');
@@ -1583,81 +1838,105 @@ function trimHistoryTail() {
 function createArenaWalls() {
     const W = WORLD_SIZE;
     const wh = ARENA_WALL_HEIGHT;
+    const gridUnit = FLOOR_GRID_EXTENT / GRID_DIVISIONS;
+    const wallDepth = Math.max(gridUnit, FOG_FAR);
+    const wallLayers = Math.max(1, Math.floor(wallDepth / gridUnit));
     const wallGeom = new THREE.PlaneGeometry(2 * W, wh);
-    const wallMat = new THREE.MeshBasicMaterial({
-        color: ARENA_WALL_COLOR,
-        transparent: true,
-        opacity: ARENA_WALL_OPACITY,
-        depthWrite: false,
-        side: THREE.FrontSide,
-        fog: true
-    });
-
-    const placements = [
-        [W, wh / 2, 0, -Math.PI / 2],
-        [-W, wh / 2, 0, Math.PI / 2],
-        [0, wh / 2, W, Math.PI],
-        [0, wh / 2, -W, 0]
+    const wallPlacements = [
+        { axis: 'x', sign: 1, ry: -Math.PI / 2 },
+        { axis: 'x', sign: -1, ry: Math.PI / 2 },
+        { axis: 'z', sign: 1, ry: Math.PI },
+        { axis: 'z', sign: -1, ry: 0 }
     ];
-    for (let p = 0; p < placements.length; p++) {
-        const [x, y, z, ry] = placements[p];
-        const m = new THREE.Mesh(wallGeom, wallMat);
-        m.position.set(x, y, z);
-        m.rotation.y = ry;
-        scene.add(m);
+    for (let i = wallEdgeMaterials.length - 1; i >= 0; i--) {
+        wallEdgeMaterials[i].dispose();
     }
+    wallEdgeMaterials.length = 0;
 
-    wallEdgeMaterial = new LineMaterial({
-        color: 0x39ff14,
-        linewidth: ARENA_WALL_EDGE_WIDTH,
-        worldUnits: true,
-        transparent: true,
-        opacity: 1,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending
-    });
-    wallEdgeMaterial.resolution.set(window.innerWidth, window.innerHeight);
-
-    function addWallEdgeLoop(pts) {
+    function addWallEdgeLoop(pts, mat) {
         const flat = [];
         for (let i = 0; i < pts.length; i++) {
             flat.push(pts[i].x, pts[i].y, pts[i].z);
         }
         const geo = new LineGeometry();
         geo.setPositions(flat);
-        const line = new Line2(geo, wallEdgeMaterial);
+        const line = new Line2(geo, mat);
         line.computeLineDistances();
         scene.add(line);
     }
 
-    addWallEdgeLoop([
-        new THREE.Vector3(W, 0, -W),
-        new THREE.Vector3(W, 0, W),
-        new THREE.Vector3(W, wh, W),
-        new THREE.Vector3(W, wh, -W),
-        new THREE.Vector3(W, 0, -W)
-    ]);
-    addWallEdgeLoop([
-        new THREE.Vector3(-W, 0, -W),
-        new THREE.Vector3(-W, 0, W),
-        new THREE.Vector3(-W, wh, W),
-        new THREE.Vector3(-W, wh, -W),
-        new THREE.Vector3(-W, 0, -W)
-    ]);
-    addWallEdgeLoop([
-        new THREE.Vector3(-W, 0, W),
-        new THREE.Vector3(W, 0, W),
-        new THREE.Vector3(W, wh, W),
-        new THREE.Vector3(-W, wh, W),
-        new THREE.Vector3(-W, 0, W)
-    ]);
-    addWallEdgeLoop([
-        new THREE.Vector3(-W, 0, -W),
-        new THREE.Vector3(W, 0, -W),
-        new THREE.Vector3(W, wh, -W),
-        new THREE.Vector3(-W, wh, -W),
-        new THREE.Vector3(-W, 0, -W)
-    ]);
+    for (let layer = 0; layer <= wallLayers; layer++) {
+        const ext = W + layer * gridUnit;
+        const layerT = wallLayers > 0 ? layer / wallLayers : 0;
+        const fade = 1 - THREE.MathUtils.smoothstep(layerT, 0, 1);
+        const strongFade = Math.pow(fade, 2.6);
+        const wallOpacity = THREE.MathUtils.lerp(ARENA_WALL_OPACITY, 0.006, 1 - strongFade);
+        const edgeOpacity = THREE.MathUtils.lerp(0.85, 0.008, 1 - strongFade);
+        const edgeColor = new THREE.Color(0x39ff14).lerp(new THREE.Color(0x041404), 1 - strongFade);
+
+        const wallMat = new THREE.MeshBasicMaterial({
+            color: ARENA_WALL_COLOR,
+            transparent: true,
+            opacity: wallOpacity,
+            depthWrite: false,
+            side: THREE.FrontSide,
+            fog: true
+        });
+        for (let p = 0; p < wallPlacements.length; p++) {
+            const placement = wallPlacements[p];
+            const m = new THREE.Mesh(wallGeom, wallMat);
+            if (placement.axis === 'x') {
+                m.position.set(placement.sign * ext, wh / 2, 0);
+            } else {
+                m.position.set(0, wh / 2, placement.sign * ext);
+            }
+            m.rotation.y = placement.ry;
+            scene.add(m);
+        }
+
+        const edgeMat = new LineMaterial({
+            color: edgeColor.getHex(),
+            linewidth: ARENA_WALL_EDGE_WIDTH,
+            worldUnits: true,
+            transparent: true,
+            opacity: edgeOpacity,
+            depthWrite: false,
+            blending: THREE.NormalBlending,
+            fog: true
+        });
+        edgeMat.resolution.set(window.innerWidth, window.innerHeight);
+        wallEdgeMaterials.push(edgeMat);
+        if (layer === 0) wallEdgeMaterial = edgeMat;
+
+        addWallEdgeLoop([
+            new THREE.Vector3(ext, 0, -ext),
+            new THREE.Vector3(ext, 0, ext),
+            new THREE.Vector3(ext, wh, ext),
+            new THREE.Vector3(ext, wh, -ext),
+            new THREE.Vector3(ext, 0, -ext)
+        ], edgeMat);
+        addWallEdgeLoop([
+            new THREE.Vector3(-ext, 0, -ext),
+            new THREE.Vector3(-ext, 0, ext),
+            new THREE.Vector3(-ext, wh, ext),
+            new THREE.Vector3(-ext, wh, -ext),
+            new THREE.Vector3(-ext, 0, -ext)
+        ], edgeMat);
+        addWallEdgeLoop([
+            new THREE.Vector3(-ext, 0, ext),
+            new THREE.Vector3(ext, 0, ext),
+            new THREE.Vector3(ext, wh, ext),
+            new THREE.Vector3(-ext, wh, ext),
+            new THREE.Vector3(-ext, 0, ext)
+        ], edgeMat);
+        addWallEdgeLoop([
+            new THREE.Vector3(-ext, 0, -ext),
+            new THREE.Vector3(ext, 0, -ext),
+            new THREE.Vector3(ext, wh, -ext),
+            new THREE.Vector3(-ext, wh, -ext),
+            new THREE.Vector3(-ext, 0, -ext)
+        ], edgeMat);
+    }
 }
 
 function setupComposer() {
@@ -1678,19 +1957,44 @@ function createFoodArrow() {
         emissiveIntensity: FOOD_ARROW_EMISSIVE_INTENSITY,
         roughness: 0.26,
         metalness: 0.2,
-        wireframe: true,
         fog: false,
         depthWrite: false,
         depthTest: false
     });
 
-    // Simple angular 5-point concept: a square pyramid arrowhead.
-    const headGeo = new THREE.ConeGeometry(FOOD_ARROW_WIDTH, FOOD_ARROW_LENGTH, 4, 1);
-    const head = new THREE.Mesh(headGeo, mat);
-    head.rotation.x = Math.PI / 2;
-    head.position.z = -FOOD_ARROW_LENGTH * 0.5;
-    head.renderOrder = 1000;
-    arrow.add(head);
+    // Render a square-pyramid wire shape using thick cylinders so line thickness is explicit.
+    const rodGeo = new THREE.CylinderGeometry(
+        FOOD_ARROW_LINE_THICKNESS * 0.5,
+        FOOD_ARROW_LINE_THICKNESS * 0.5,
+        1,
+        6,
+        1
+    );
+    const up = new THREE.Vector3(0, 1, 0);
+    const tip = new THREE.Vector3(0, 0, 0);
+    const baseZ = -FOOD_ARROW_LENGTH;
+    const half = FOOD_ARROW_WIDTH;
+    const b1 = new THREE.Vector3(-half, -half, baseZ);
+    const b2 = new THREE.Vector3(half, -half, baseZ);
+    const b3 = new THREE.Vector3(half, half, baseZ);
+    const b4 = new THREE.Vector3(-half, half, baseZ);
+    const segments = [
+        [tip, b1], [tip, b2], [tip, b3], [tip, b4],
+        [b1, b2], [b2, b3], [b3, b4], [b4, b1]
+    ];
+
+    for (let i = 0; i < segments.length; i++) {
+        const a = segments[i][0];
+        const b = segments[i][1];
+        const dir = b.clone().sub(a);
+        const len = dir.length();
+        const rod = new THREE.Mesh(rodGeo, mat);
+        rod.position.copy(a).addScaledVector(dir, 0.5);
+        rod.quaternion.setFromUnitVectors(up, dir.normalize());
+        rod.scale.y = len;
+        rod.renderOrder = 1000;
+        arrow.add(rod);
+    }
 
     arrow.visible = false;
     return arrow;
@@ -1755,27 +2059,82 @@ function updateFoodVisuals(elapsedSeconds, delta) {
     food.rotation.x += FOOD_SPIN_X_SPEED * delta;
 }
 
-function setupUiLiquidGlass() {
-    const ui = document.getElementById('ui');
-    const scoreRow = document.getElementById('score-row');
-    const timer = document.getElementById('game-timer');
-    if (!ui || !scoreRow || !timer) return;
-    const { element } = createLiquidGlassPill({
-        className: 'ui-liquid-glass-pill',
-        children: [scoreRow, timer],
-        glassThickness: 145,
-        refractiveIndex: 1.62,
-        refractionScale: 1.88,
-        specularOpacity: 0.68,
-        blur: 1.62,
-        fallbackBlurPx: 24,
-        bezelWidth: 15,
-    });
-    ui.appendChild(element);
+function createFloorGrid() {
+    if (!floorGridRoot) {
+        floorGridRoot = new THREE.Group();
+        scene.add(floorGridRoot);
+    }
+    for (let i = floorGridMaterials.length - 1; i >= 0; i--) {
+        floorGridMaterials[i].dispose();
+    }
+    floorGridMaterials.length = 0;
+    for (let i = floorGridRoot.children.length - 1; i >= 0; i--) {
+        const child = floorGridRoot.children[i];
+        if (child !== floor) floorGridRoot.remove(child);
+    }
+
+    floorGridStaticGroup = new THREE.Group();
+    floorGridParallaxGroup = new THREE.Group();
+    floorGridRoot.add(floorGridStaticGroup);
+    floorGridRoot.add(floorGridParallaxGroup);
+
+    const half = FLOOR_GRID_EXTENT * 0.5;
+    const step = FLOOR_GRID_EXTENT / GRID_DIVISIONS;
+    const eps = step * 0.25;
+
+    const addLine = (x1, z1, x2, z2, linewidthPx, colorHex, toStaticLayer) => {
+        const mat = new LineMaterial({
+            color: colorHex,
+            linewidth: linewidthPx,
+            worldUnits: false,
+            transparent: true,
+            opacity: GRID_OPACITY,
+            fog: true,
+            depthWrite: false,
+            depthTest: true
+        });
+        mat.resolution.set(window.innerWidth, window.innerHeight);
+        floorGridMaterials.push(mat);
+
+        const geo = new LineGeometry();
+        geo.setPositions([x1, 0.02, z1, x2, 0.02, z2]);
+        const line = new Line2(geo, mat);
+        line.computeLineDistances();
+        (toStaticLayer ? floorGridStaticGroup : floorGridParallaxGroup).add(line);
+    };
+
+    for (let i = 0; i <= GRID_DIVISIONS; i++) {
+        const p = -half + i * step;
+        const isCenter = Math.abs(p) < eps;
+        const isEdge = Math.abs(Math.abs(p) - half) < eps;
+        const width = (isCenter || isEdge) ? GRID_AXIS_EDGE_THICKNESS_PX : GRID_LINE_THICKNESS_PX;
+        const color = (isCenter || isEdge) ? GRID_COLOR_MAIN : GRID_COLOR_SUB;
+        const staticLine = isEdge;
+
+        addLine(-half, p, half, p, width, color, staticLine);
+        addLine(p, -half, p, half, width, color, staticLine);
+    }
+}
+
+function updateFloorParallax(delta) {
+    if (!floorGridParallaxGroup || !camera) return;
+    _floorParallaxTarget.set(
+        -camera.position.x * FLOOR_PARALLAX_FACTOR,
+        0,
+        -camera.position.z * FLOOR_PARALLAX_FACTOR
+    );
+    _floorParallaxOffset.lerp(_floorParallaxTarget, Math.min(1, delta * FLOOR_PARALLAX_LERP));
+
+    const step = FLOOR_GRID_EXTENT / GRID_DIVISIONS;
+    const maxShift = step * 0.5;
+    floorGridParallaxGroup.position.set(
+        THREE.MathUtils.clamp(_floorParallaxOffset.x, -maxShift, maxShift),
+        0,
+        THREE.MathUtils.clamp(_floorParallaxOffset.z, -maxShift, maxShift)
+    );
 }
 
 function init() {
-    setupUiLiquidGlass();
     sfx = createSfx();
     scene = new THREE.Scene();
     scene.background = new THREE.Color(SCENE_BACKGROUND);
@@ -1796,14 +2155,15 @@ function init() {
     scene.add(pointLight);
 
     // Floor
-    const grid = new THREE.GridHelper(FLOOR_GRID_EXTENT, GRID_DIVISIONS, GRID_COLOR_MAIN, GRID_COLOR_SUB);
-    scene.add(grid);
+    floorGridRoot = new THREE.Group();
+    scene.add(floorGridRoot);
 
     const floorGeo = new THREE.PlaneGeometry(FLOOR_GRID_EXTENT, FLOOR_GRID_EXTENT);
     const floorMat = new THREE.MeshStandardMaterial({ color: FLOOR_COLOR });
     floor = new THREE.Mesh(floorGeo, floorMat);
     floor.rotation.x = FLOOR_ROTATION_X;
-    scene.add(floor);
+    floorGridRoot.add(floor);
+    createFloorGrid();
 
     createArenaWalls();
     setupComposer();
@@ -1856,7 +2216,7 @@ function init() {
             currentRotationY -= movementX * mouseSensitivityX;
         },
         onPointerHintChange: () => updatePointerHint(),
-        isUiTargetBlocked: () => false,
+        isUiTargetBlocked: () => isRotationPlayBlocked(),
         onRestartRequest: () => {
             if (!isMenuOpen()) return;
             activateMenuSelection();
@@ -1866,6 +2226,7 @@ function init() {
     inputController.attach();
 
     window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', onResize);
     window.addEventListener('pointermove', onGlobalPointerMove, true);
     window.addEventListener('pointerdown', onGlobalPointerDown, true);
     window.addEventListener('touchstart', onGlobalTouchStart, { capture: true, passive: true });
@@ -1880,6 +2241,7 @@ function init() {
     hideEndScoreUi();
     updateMenuUi();
     updateTouchControlsUi();
+    enforceRotationPlayGate();
     if (!isMobilePhoneLike()) requestPointerLock();
 
     animate();
@@ -1927,8 +2289,14 @@ function spawnFood() {
 }
 
 window.startGame = function () {
+    if (isRotationPlayBlocked()) {
+        inputController.reset();
+        updateTouchControlsUi();
+        return;
+    }
     restartCooldownUntilMs = 0;
     restartCooldownLastShownSec = -1;
+    clearDeathReplay();
     tailExplosionQueue.length = 0;
     hasStartedRunOnce = true;
     setMenuScreen(MENU_SCREEN_MAIN);
@@ -1985,6 +2353,7 @@ window.startGame = function () {
     for (let i = 0; i < snakeSegments.length; i++) {
         placeBodySegmentAlongTrail(i, snakeSegments[i]);
     }
+    captureDeathReplayFrame();
     updateScoreUi();
 
     spawnFood();
@@ -2047,21 +2416,67 @@ function placeBodySegmentAlongTrail(segmentIndex, mesh) {
     mesh.quaternion.setFromUnitVectors(BOX_LOCAL_FORWARD, _pathTan);
 }
 
-function addSegment() {
-    const seg = new THREE.Mesh(
-        new RoundedBoxGeometry(
-            BODY_BOX_WIDTH,
-            BODY_BOX_HEIGHT,
-            BODY_BOX_DEPTH,
-            BODY_ROUND_SEGMENTS,
-            BODY_ROUND_RADIUS
-        ),
-        new THREE.MeshStandardMaterial({
-            color: BODY_COLOR,
-            emissive: BODY_COLOR,
-            emissiveIntensity: BODY_EMISSIVE_INTENSITY
-        })
+function ensureBodySegmentAssets() {
+    if (bodySegmentGeometry) return;
+
+    bodySegmentGeometry = new THREE.IcosahedronGeometry(BODY_ICOSAHEDRON_RADIUS, BODY_ICOSAHEDRON_DETAIL);
+    bodySegmentCoreMaterial = new THREE.MeshStandardMaterial({
+        color: 0x000000,
+        emissive: 0x000000,
+        transparent: true,
+        opacity: 0.5,
+        fog: true
+    });
+    bodySegmentEdgeMaterial = new THREE.MeshStandardMaterial({
+        color: HEAD_COLOR,
+        emissive: HEAD_COLOR,
+        emissiveIntensity: HEAD_EMISSIVE_INTENSITY,
+        roughness: 0.25,
+        metalness: 0.2,
+        fog: true
+    });
+    bodySegmentRodGeometry = new THREE.CylinderGeometry(
+        BODY_EDGE_LINE_THICKNESS * 0.5,
+        BODY_EDGE_LINE_THICKNESS * 0.5,
+        1,
+        6,
+        1
     );
+
+    const edges = new THREE.EdgesGeometry(bodySegmentGeometry);
+    const positions = edges.getAttribute('position');
+    bodySegmentEdgePairs = [];
+    for (let i = 0; i < positions.count; i += 2) {
+        const a = new THREE.Vector3().fromBufferAttribute(positions, i);
+        const b = new THREE.Vector3().fromBufferAttribute(positions, i + 1);
+        bodySegmentEdgePairs.push([a, b]);
+    }
+    edges.dispose();
+}
+
+function addSegment() {
+    ensureBodySegmentAssets();
+    const seg = new THREE.Group();
+
+    const core = new THREE.Mesh(bodySegmentGeometry, bodySegmentCoreMaterial);
+    seg.add(core);
+
+    const edgeGroup = new THREE.Group();
+    for (let i = 0; i < bodySegmentEdgePairs.length; i++) {
+        const a = bodySegmentEdgePairs[i][0];
+        const b = bodySegmentEdgePairs[i][1];
+        const dir = _pathEdge.copy(b).sub(a);
+        const len = dir.length();
+        if (len < 1e-8) continue;
+        const rod = new THREE.Mesh(bodySegmentRodGeometry, bodySegmentEdgeMaterial);
+        rod.position.copy(a).addScaledVector(dir, 0.5);
+        rod.quaternion.setFromUnitVectors(_bodyRodUp, dir.multiplyScalar(1 / len));
+        rod.scale.y = len;
+        edgeGroup.add(rod);
+    }
+    edgeGroup.scale.setScalar(BODY_EDGE_LINE_SCALE);
+    seg.add(edgeGroup);
+
     if (snakeSegments.length > 0) {
         const tail = snakeSegments[snakeSegments.length - 1];
         seg.position.copy(tail.position);
@@ -2083,21 +2498,43 @@ function onResize() {
         composer.setSize(window.innerWidth, window.innerHeight);
         composer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     }
-    if (wallEdgeMaterial) {
+    if (wallEdgeMaterials.length > 0) {
+        const rw = window.innerWidth;
+        const rh = window.innerHeight;
+        for (let i = 0; i < wallEdgeMaterials.length; i++) {
+            wallEdgeMaterials[i].resolution.set(rw, rh);
+        }
+    } else if (wallEdgeMaterial) {
         wallEdgeMaterial.resolution.set(window.innerWidth, window.innerHeight);
+    }
+    if (floorGridMaterials.length > 0) {
+        const rw = window.innerWidth;
+        const rh = window.innerHeight;
+        for (let i = 0; i < floorGridMaterials.length; i++) {
+            floorGridMaterials[i].resolution.set(rw, rh);
+        }
     }
     if (crashVfxRoot && crashVfxRoot.userData.fatLineMaterials) {
         const rw = window.innerWidth;
         const rh = window.innerHeight;
         crashVfxRoot.userData.fatLineMaterials.forEach(m => m.resolution.set(rw, rh));
     }
+    enforceRotationPlayGate();
+    updatePointerHint();
+    updateTouchControlsUi();
 }
 
 function animate() {
     requestAnimationFrame(animate);
     const delta = clock.getDelta();
+    const gameplayStep = delta * GAMEPLAY_REFERENCE_FPS * GAMEPLAY_SPEED_SCALE;
     let boostingNow = false;
     inputController.updateGamepadInput();
+    enforceRotationPlayGate();
+    if (sfx && typeof sfx.setBgmMode === 'function') {
+        const bgmMode = isGameplayActive() ? 'game' : (isMenuOpen() ? 'menu' : 'off');
+        sfx.setBgmMode(bgmMode);
+    }
 
     if (isGameplayActive()) {
         gameTimeRemaining = Math.max(0, gameTimeRemaining - delta);
@@ -2114,16 +2551,17 @@ function animate() {
         const wantsBrake = input.mouseBrake || input.gamepadBrake;
         const usingTimeChill = !wantsAccel && wantsBrake && timeChillEnergy > 0;
         boostingNow = wantsAccel;
+        if (sfx && typeof sfx.setBoostActive === 'function') sfx.setBoostActive(wantsAccel);
 
         if (wantsAccel) {
-            speedMultiplier = Math.min(speedMultiplier + SPEED_BOOST_STEP, SPEED_BOOST_MAX);
+            speedMultiplier = Math.min(speedMultiplier + (SPEED_BOOST_STEP * gameplayStep), SPEED_BOOST_MAX);
         } else if (usingTimeChill) {
-            speedMultiplier = Math.max(speedMultiplier - SPEED_BRAKE_STEP, SPEED_MIN);
+            speedMultiplier = Math.max(speedMultiplier - (SPEED_BRAKE_STEP * gameplayStep), SPEED_MIN);
         } else {
             if (speedMultiplier > SPEED_BASE) {
-                speedMultiplier = Math.max(speedMultiplier - SPEED_BOOST_STEP, SPEED_BASE);
+                speedMultiplier = Math.max(speedMultiplier - (SPEED_BOOST_STEP * gameplayStep), SPEED_BASE);
             } else if (speedMultiplier < SPEED_BASE) {
-                speedMultiplier = Math.min(speedMultiplier + SPEED_RECOVER_STEP, SPEED_BASE);
+                speedMultiplier = Math.min(speedMultiplier + (SPEED_RECOVER_STEP * gameplayStep), SPEED_BASE);
             }
         }
 
@@ -2133,6 +2571,7 @@ function animate() {
             timeChillEnergy = Math.min(TIMECHILL_MAX, timeChillEnergy + TIMECHILL_RECHARGE_PER_SEC * delta);
         }
         updateTimeChillUi(usingTimeChill || timeChillEnergy < TIMECHILL_MAX);
+        if (sfx && typeof sfx.setTimeChillActive === 'function') sfx.setTimeChillActive(usingTimeChill);
 
         // Rotation
         const controllerTurnInput = input.gamepadTurnAxis * CONTROLLER_TURN_SHARPNESS;
@@ -2142,18 +2581,19 @@ function animate() {
             const controllerFullSpeedScale = speedMultiplier * CONTROLLER_TURN_SPEED_RADIUS_FACTOR;
             const controllerSpeedTurnScale =
                 1 + (controllerFullSpeedScale - 1) * CONTROLLER_TURN_RADIUS_SPEED_INFLUENCE;
-            currentRotationY += TURN_SPEED * controllerSpeedTurnScale * controllerTurnInput;
+            currentRotationY += TURN_SPEED * controllerSpeedTurnScale * controllerTurnInput * gameplayStep;
         }
         const touchAndDigitalTurnInput = touchTurnInput + digitalTurnInput;
         if (touchAndDigitalTurnInput !== 0) {
-            currentRotationY += TURN_SPEED * touchAndDigitalTurnInput;
+            currentRotationY += TURN_SPEED * touchAndDigitalTurnInput * gameplayStep;
         }
 
         // Move forward
         const direction = DIR_FORWARD.clone().applyAxisAngle(DIR_WORLD_UP, currentRotationY);
 
-        snakeHead.position.addScaledVector(direction, FORWARD_STEP * speedMultiplier);
+        snakeHead.position.addScaledVector(direction, FORWARD_STEP * speedMultiplier * gameplayStep);
         snakeHead.rotation.y = currentRotationY;
+        handleWallBounceHit();
 
 
         const hp = snakeHead.position.clone();
@@ -2175,6 +2615,7 @@ function animate() {
             gameTimeRemaining += 1;
             food.getWorldPosition(_foodEatBurstPos);
             spawnFoodBurst(_foodEatBurstPos);
+            recordDeathReplayEvent('foodBurst', { x: _foodEatBurstPos.x, y: _foodEatBurstPos.y, z: _foodEatBurstPos.z });
             spawnFood();
             addSegment();
             if (sfx) sfx.eat();
@@ -2182,29 +2623,36 @@ function animate() {
             updateTimerUi();
         }
 
-        // Wall collision — neon crack + camera zoom-out before game over
-        if (Math.abs(snakeHead.position.x) > WORLD_SIZE || Math.abs(snakeHead.position.z) > WORLD_SIZE) {
-            beginWallCrash();
-        } else {
-            if (selfHitImmunityRemaining <= 0) {
-                for (let i = SELF_COLLISION_START_INDEX; i < snakeSegments.length; i++) {
-                    if (snakeHead.position.distanceTo(snakeSegments[i].position) < SELF_COLLISION_DISTANCE) {
-                        beginSelfCollisionHit();
-                        break;
-                    }
+        if (selfHitImmunityRemaining <= 0) {
+            for (let i = SELF_COLLISION_START_INDEX; i < snakeSegments.length; i++) {
+                if (snakeHead.position.distanceTo(snakeSegments[i].position) < SELF_COLLISION_DISTANCE) {
+                    beginSelfCollisionHit();
+                    break;
                 }
             }
-            if (isGameplayActive()) {
-                const camOffset = new THREE.Vector3(CAMERA_OFFSET_X, CAMERA_OFFSET_Y, CAMERA_OFFSET_Z)
-                    .applyAxisAngle(DIR_WORLD_UP, currentRotationY);
-                camOffset.add(snakeHead.position);
-                camera.position.lerp(camOffset, CAMERA_FOLLOW_LERP);
-                camera.lookAt(snakeHead.position);
-            }
+        }
+        if (isGameplayActive()) {
+            const camOffset = new THREE.Vector3(CAMERA_OFFSET_X, CAMERA_OFFSET_Y, CAMERA_OFFSET_Z)
+                .applyAxisAngle(DIR_WORLD_UP, currentRotationY);
+            camOffset.add(snakeHead.position);
+            camera.position.lerp(camOffset, CAMERA_FOLLOW_LERP);
+            camera.lookAt(snakeHead.position);
+        }
+
+        const replayStep = 1 / DEATH_REPLAY_CAPTURE_FPS;
+        deathReplayCaptureAccumulator += delta;
+        while (deathReplayCaptureAccumulator >= replayStep) {
+            deathReplayCaptureAccumulator -= replayStep;
+            captureDeathReplayFrame();
         }
     } else {
         updateSelfHitPulse(delta);
         updateTimeChillUi(false);
+        if (sfx && typeof sfx.setBoostActive === 'function') sfx.setBoostActive(false);
+        if (sfx && typeof sfx.setTimeChillActive === 'function') sfx.setTimeChillActive(false);
+        if (!crashAnimating && !gameActive) {
+            updateDeathReplay(delta);
+        }
         if (shouldOrbitMenuCamera()) {
             updateMenuDemoAutoplay(delta);
             const t = clock.elapsedTime * MENU_IDLE_ORBIT_SPEED;
@@ -2225,6 +2673,7 @@ function animate() {
             }
         }
     }
+    updateFloorParallax(delta);
 
     if (crashAnimating) {
         updateWallCrashVfx(delta);
@@ -2267,6 +2716,7 @@ function endGame(message, options = {}) {
     showEndScoreUi(finalScore, heads, headBonus, score);
     document.getElementById('status').innerText = message;
     document.getElementById('overlay').classList.remove('hidden');
+    startDeathReplay();
     updateMenuUi();
 }
 
