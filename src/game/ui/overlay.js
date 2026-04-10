@@ -201,12 +201,14 @@ export function updateMenuUi() {
     if (runtime.menuScreen === MENU_SCREEN_SETTINGS) titleText = '';
     if (runtime.menuScreen === MENU_SCREEN_EXTRAS) titleText = 'EXTRAS';
     if (runtime.menuScreen === MENU_SCREEN_ASSET_VIEWER) titleText = '';
+    const isEndMainScreen = runtime.menuScreen === MENU_SCREEN_MAIN && endUiVisible;
     updateMenu3dState({
         items: menuItems,
         activeAction: menuActions[runtime.menuIndex],
         showHighlight: true,
         isVisible: isMenuOpen() && runtime.menuScreen !== MENU_SCREEN_ASSET_VIEWER,
-        titleText
+        titleText,
+        endScreenLayout: isEndMainScreen
     });
     syncUi3d();
 }

@@ -127,9 +127,9 @@ function rebuild() {
         replaceTextMesh(`${panel.id}:timerValue`, panel.root, d.timerText, 1.12, COLOR_MAIN, WALL_VALUE_LEFT_X, WALL_ROW_TIMER_Y, 0, 'left');
     }
 
-    replaceTextMesh('endScore', state.menuRoot, d.endScoreText, 0.19, COLOR_MAIN, 0, 0.82, -7.2);
-    replaceTextMesh('endBreakdown', state.menuRoot, d.endBreakdownText, 0.072, COLOR_SUB, 0, 0.42, -7.2);
-    replaceTextMesh('endHigh', state.menuRoot, d.endHighText, 0.09, COLOR_SUB, 0, 0.08, -7.2);
+    replaceTextMesh('endScore', state.menuRoot, d.endScoreText, 0.19, COLOR_MAIN, 0, 1.22, -7.2);
+    replaceTextMesh('endBreakdown', state.menuRoot, d.endBreakdownText, 0.072, COLOR_SUB, 0, 0.82, -7.2);
+    replaceTextMesh('endHigh', state.menuRoot, d.endHighText, 0.09, COLOR_SUB, 0, 0.48, -7.2);
 
     if (state.meshes.hint) state.meshes.hint.visible = d.pointerHintVisible && d.hudVisible;
     if (state.meshes.fps) state.meshes.fps.visible = d.fpsVisible && d.hudVisible;

@@ -28,7 +28,8 @@ const state = {
     targetSelectorY: 0,
     selectorY: 0,
     titleText: 'VIPER RUSH',
-    titleGroup: null
+    titleGroup: null,
+    endScreenLayout: false
 };
 
 function buildLine(label, y, selected) {
@@ -77,7 +78,8 @@ function rebuildTitle() {
         spaceAdvance: TITLE_SPACE_ADVANCE,
         thickWireScale: THICK_WIRE_SCALE
     });
-    group.position.set(0, 3.1, 0.18);
+    const titleY = state.endScreenLayout ? 3.58 : 3.1;
+    group.position.set(0, titleY, 0.18);
     group.renderOrder = 910;
     state.root.add(group);
     state.titleGroup = group;
@@ -88,7 +90,9 @@ function rebuildLines() {
     clearLines();
     const spacing = 0.88;
     const count = state.actionsVisible.length;
-    const yStart = ((count - 1) * spacing) * 0.5;
+    const baseYStart = ((count - 1) * spacing) * 0.5;
+    const yOffset = state.endScreenLayout ? -0.72 : 0;
+    const yStart = baseYStart + yOffset;
     for (let i = 0; i < count; i++) {
         const action = state.actionsVisible[i];
         const label = state.labelsByAction.get(action) || action.toUpperCase();
@@ -126,10 +130,11 @@ export function initMenu3d({ scene, camera }) {
     state.root.add(state.selector);
 }
 
-export function updateMenu3dState({ items, activeAction, showHighlight, isVisible, titleText }) {
+export function updateMenu3dState({ items, activeAction, showHighlight, isVisible, titleText, endScreenLayout }) {
     state.actionsVisible = items.map(item => item.action);
     state.activeAction = activeAction;
     state.showHighlight = !!showHighlight;
+    state.endScreenLayout = !!endScreenLayout;
     if (typeof titleText === 'string') state.titleText = titleText.toUpperCase();
     for (let i = 0; i < items.length; i++) {
         state.labelsByAction.set(items[i].action, String(items[i].label || '').toUpperCase());
@@ -168,5 +173,4 @@ export function updateMenu3dAnimation(elapsedTime, delta) {
         state.selector.visible = state.showHighlight;
     }
 }
-
 
