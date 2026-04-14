@@ -69,6 +69,7 @@ export const runtime = {
     fpsSampleFrames: 0,
     fullscreenRequestedOnce: false,
     fullscreenAttemptInFlight: false,
+    refreshReloadArmed: false,
     gamePaused: false,
     restartCooldownUntilMs: 0,
     restartCooldownLastShownSec: -1,

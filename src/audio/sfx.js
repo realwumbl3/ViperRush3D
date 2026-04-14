@@ -1,6 +1,7 @@
 export function createSfx() {
     let ctx = null;
     let enabled = true;
+    let musicEnabled = true;
     let bgmMode = 'off';
     let activeBgmMode = 'off';
     let bgmLoadPromise = null;
@@ -149,7 +150,7 @@ export function createSfx() {
     }
 
     function syncBgmPlayback() {
-        let targetMode = enabled
+        let targetMode = (enabled && musicEnabled)
             ? (bgmMode === 'game' || bgmMode === 'menu' ? bgmMode : 'off')
             : 'off';
         if ((targetMode === 'game' && MUTE_GAME_BGM) || (targetMode === 'menu' && MUTE_MENU_BGM)) {
@@ -276,6 +277,15 @@ export function createSfx() {
         return enabled;
     }
 
+    function setMusicEnabled(v) {
+        musicEnabled = !!v;
+        syncBgmPlayback();
+    }
+
+    function isMusicEnabled() {
+        return musicEnabled;
+    }
+
     function setBgmMode(mode) {
         const nextMode = (mode === 'game' || mode === 'menu') ? mode : 'off';
         if (nextMode === bgmMode) return;
@@ -331,6 +341,8 @@ export function createSfx() {
         unlock,
         setEnabled,
         isEnabled,
+        setMusicEnabled,
+        isMusicEnabled,
         setBgmMode,
         setTimeChillActive,
         setBoostActive,

@@ -28,6 +28,7 @@ export function resumeGame() {
     if (isRotationPlayBlocked()) return;
     if (!runtime.gamePaused || !runtime.gameActive) return;
     runtime.gamePaused = false;
+    runtime.refreshReloadArmed = false;
     setStatusText('VIPER RUSH');
     if (!isMobilePhoneLike()) requestPointerLock();
     updatePointerHint();

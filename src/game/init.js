@@ -51,6 +51,7 @@ import {
     updatePointerHint,
     initMouseSensitivitySettings,
     initFpsCounterSettings,
+    initMusicSettings,
     updateTimeChillUi,
     updateTimerUi,
     hideEndScoreUi,
@@ -214,6 +215,7 @@ export function init() {
 
     initMouseSensitivitySettings();
     initFpsCounterSettings();
+    initMusicSettings();
     updateTimeChillUi(false);
     updateTimerUi();
     hideEndScoreUi();

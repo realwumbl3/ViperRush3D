@@ -15,7 +15,8 @@ import {
 import {
     STORAGE_KEY_MOUSE_SENS,
     STORAGE_KEY_HIGH_SCORE,
-    STORAGE_KEY_SHOW_FPS
+    STORAGE_KEY_SHOW_FPS,
+    STORAGE_KEY_MUSIC
 } from '../config/menu.js';
 import {
     getSavedHighScore as getSavedHighScoreFromStorage,
@@ -92,7 +93,8 @@ export function setStatusText(text) {
 }
 
 export function getVisibleMenuActions() {
-    if (runtime.menuScreen === MENU_SCREEN_SETTINGS) return ['sfx', 'sensitivity', 'fpsCounter', 'clearCache', 'back'];
+    if (runtime.refreshReloadArmed) return ['refreshConfirm', 'refreshBack'];
+    if (runtime.menuScreen === MENU_SCREEN_SETTINGS) return ['sfx', 'music', 'sensitivity', 'fpsCounter', 'clearCache', 'back'];
     if (runtime.menuScreen === MENU_SCREEN_EXTRAS) return ['assetViewer', 'backExtras'];
     if (runtime.menuScreen === MENU_SCREEN_ASSET_VIEWER) return ['backAssetViewer'];
     return runtime.gameActive ? ['pause', 'restart', 'settings', 'extras'] : ['restart', 'settings', 'extras'];
@@ -103,6 +105,7 @@ export function normalizeMenuIndex() {
     const currentAction = menuActions[runtime.menuIndex];
     if (visible.indexOf(currentAction) >= 0) return;
     let fallbackAction = getDefaultMainMenuAction();
+    if (runtime.refreshReloadArmed) fallbackAction = 'refreshConfirm';
     if (runtime.menuScreen === MENU_SCREEN_SETTINGS) fallbackAction = 'sfx';
     if (runtime.menuScreen === MENU_SCREEN_EXTRAS) fallbackAction = 'assetViewer';
     if (runtime.menuScreen === MENU_SCREEN_ASSET_VIEWER) fallbackAction = 'backAssetViewer';
@@ -163,7 +166,10 @@ export function updateMenuUi() {
     const settingsLabel = 'Settings';
     const extrasLabel = 'Extras';
     const assetViewerLabel = '3D Asset Viewer';
+    const refreshConfirmLabel = 'REFRESH (F5)';
+    const refreshBackLabel = 'BACK';
     const sfxLabel = `SFX: ${runtime.sfx && runtime.sfx.isEnabled() ? 'ON' : 'OFF'}`;
+    const musicLabel = `Music: ${runtime.sfx && runtime.sfx.isMusicEnabled() ? 'ON' : 'OFF'}`;
     const sensitivityLabel = `Mouse Sensitivity: ${mouseSensitivityToPercent(runtime.mouseSensitivityX)}`;
     const fpsCounterLabel = `FPS Counter: ${runtime.showFpsCounter ? 'ON' : 'OFF'}`;
     const clearCacheLabel = 'Clear Cache + Reload';
@@ -187,8 +193,11 @@ export function updateMenuUi() {
         if (action === 'restart') label = restartLabel;
         if (action === 'settings') label = settingsLabel;
         if (action === 'extras') label = extrasLabel;
+        if (action === 'refreshConfirm') label = refreshConfirmLabel;
+        if (action === 'refreshBack') label = refreshBackLabel;
         if (action === 'assetViewer') label = assetViewerLabel;
         if (action === 'sfx') label = sfxLabel;
+        if (action === 'music') label = musicLabel;
         if (action === 'sensitivity') label = sensitivityLabel;
         if (action === 'fpsCounter') label = fpsCounterLabel;
         if (action === 'clearCache') label = clearCacheLabel;
@@ -198,6 +207,7 @@ export function updateMenuUi() {
         menuItems.push({ action, label });
     }
     let titleText = menuStatusText;
+    if (runtime.refreshReloadArmed) titleText = '';
     if (runtime.menuScreen === MENU_SCREEN_SETTINGS) titleText = '';
     if (runtime.menuScreen === MENU_SCREEN_EXTRAS) titleText = 'EXTRAS';
     if (runtime.menuScreen === MENU_SCREEN_ASSET_VIEWER) titleText = '';
@@ -248,4 +258,12 @@ export function initMouseSensitivitySettings() {
 export function initFpsCounterSettings() {
     const saved = localStorage.getItem(STORAGE_KEY_SHOW_FPS);
     runtime.showFpsCounter = saved === '1';
+}
+
+export function initMusicSettings() {
+    const saved = localStorage.getItem(STORAGE_KEY_MUSIC);
+    const enabled = saved !== '0';
+    if (runtime.sfx && typeof runtime.sfx.setMusicEnabled === 'function') {
+        runtime.sfx.setMusicEnabled(enabled);
+    }
 }

@@ -65,6 +65,7 @@ export function startGame() {
     runtime.gameTimeRemaining = GAME_DURATION_SECONDS;
     runtime.selfHitImmunityRemaining = 0;
     runtime.selfHitPulseTime = 0;
+    runtime.refreshReloadArmed = false;
     runtime.gameActive = true;
     runtime.gamePaused = false;
     runtime.crashAnimating = false;

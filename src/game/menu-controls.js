@@ -10,7 +10,7 @@ import {
     MOUSE_SENSITIVITY_MAX,
     MOUSE_SENSITIVITY_STEP
 } from './config/gameplay.js';
-import { STORAGE_KEY_MOUSE_SENS, STORAGE_KEY_SHOW_FPS } from './config/menu.js';
+import { STORAGE_KEY_MOUSE_SENS, STORAGE_KEY_SHOW_FPS, STORAGE_KEY_MUSIC } from './config/menu.js';
 import { runtime } from './runtime.js';
 import { isGameplayActive, isMenuOpen } from './game-state.js';
 import { isRotationPlayBlocked, isMobilePhoneLike } from './platform/device.js';
@@ -28,6 +28,22 @@ import { finishCrashSequence } from './crash/crash-sequence.js';
 import { startGame } from './start-game.js';
 import { clearServiceWorkerCacheAndReload } from '../sw-reset.js';
 import { cycleAssetViewerModel } from './render/asset-viewer-3d.js';
+
+function handleRefreshConfirmKey(e) {
+    e.preventDefault();
+    if (runtime.refreshReloadArmed) {
+        runtime.refreshReloadArmed = false;
+        window.location.reload();
+        return true;
+    }
+
+    runtime.refreshReloadArmed = true;
+    if (isGameplayActive()) togglePause();
+    setMenuScreen(MENU_SCREEN_MAIN);
+    runtime.menuIndex = menuActions.indexOf('refreshConfirm');
+    updateMenuUi();
+    return true;
+}
 
 export function moveMenuSelection(dir) {
     if (isRotationPlayBlocked()) return;
@@ -60,7 +76,15 @@ export function activateMenuSelection(button = 0) {
     if (isRestartOnCooldown()) return;
     normalizeMenuIndex();
     const action = menuActions[runtime.menuIndex];
-    if (action === 'pause') {
+    if (action === 'refreshConfirm') {
+        runtime.refreshReloadArmed = false;
+        window.location.reload();
+    } else if (action === 'refreshBack') {
+        runtime.refreshReloadArmed = false;
+        runtime.menuIndex = menuActions.indexOf(getDefaultMainMenuAction());
+        if (runtime.sfx) runtime.sfx.menuSelect();
+        updateMenuUi();
+    } else if (action === 'pause') {
         if (!runtime.gameActive) return;
         if (runtime.sfx) runtime.sfx.menuSelect();
         togglePause();
@@ -86,6 +110,14 @@ export function activateMenuSelection(button = 0) {
     } else if (action === 'sfx') {
         if (runtime.sfx) runtime.sfx.menuSelect();
         runtime.sfx.setEnabled(!runtime.sfx.isEnabled());
+        updateMenuUi();
+    } else if (action === 'music') {
+        if (runtime.sfx) runtime.sfx.menuSelect();
+        if (runtime.sfx && typeof runtime.sfx.isMusicEnabled === 'function' && typeof runtime.sfx.setMusicEnabled === 'function') {
+            const next = !runtime.sfx.isMusicEnabled();
+            runtime.sfx.setMusicEnabled(next);
+            localStorage.setItem(STORAGE_KEY_MUSIC, next ? '1' : '0');
+        }
         updateMenuUi();
     } else if (action === 'sensitivity') {
         if (runtime.sfx) runtime.sfx.menuSelect();
@@ -118,6 +150,15 @@ export function activateMenuSelection(button = 0) {
 
 export function handleMenuKeyDown(e) {
     if (runtime.sfx) runtime.sfx.unlock();
+    if (e.key === 'F5') {
+        handleRefreshConfirmKey(e);
+        return;
+    }
+    if (e.key === 'Escape' && isGameplayActive()) {
+        e.preventDefault();
+        togglePause();
+        return;
+    }
     if (isRotationPlayBlocked()) {
         const k = e.key;
         if (

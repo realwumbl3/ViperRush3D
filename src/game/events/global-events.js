@@ -3,7 +3,7 @@ import { isRotationPlayBlocked, isMobilePhoneLike } from '../platform/device.js'
 import { requestFullscreenOnFirstTouch } from '../platform/fullscreen.js';
 import { finishCrashSequence } from '../crash/crash-sequence.js';
 import { activateMenuSelection } from '../menu-controls.js';
-import { togglePause } from '../pause.js';
+import { togglePause, pauseGame } from '../pause.js';
 import { requestPointerLock, isPointerLocked, updateMenuUi } from '../ui/overlay.js';
 import { onResize } from './resize.js';
 import { isGameplayActive, isMenuOpen } from '../game-state.js';
@@ -37,6 +37,10 @@ export function onGlobalTouchStart(e) {
 
 export function onGlobalPointerLockChange() {
     updateMenuUi();
+    if (!isMobilePhoneLike() && !isPointerLocked() && isGameplayActive()) {
+        pauseGame();
+        return;
+    }
     if (!isMobilePhoneLike() && !isPointerLocked() && !runtime.gamePaused && !isRotationPlayBlocked()) {
         requestPointerLock();
     }

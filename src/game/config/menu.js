@@ -3,6 +3,7 @@ export const ROTATE_BLOCK_MAX_WIDTH = 1100;
 export const STORAGE_KEY_MOUSE_SENS = 'neonDrift_mouseSensitivity';
 export const STORAGE_KEY_HIGH_SCORE = 'neonDrift_highScore';
 export const STORAGE_KEY_SHOW_FPS = 'neonDrift_showFps';
+export const STORAGE_KEY_MUSIC = 'neonDrift_music';
 
 export const CAMERA_OFFSET_X = 0;
 export const CAMERA_OFFSET_Y = 6;
